@@ -1,0 +1,15 @@
+# Supabase
+supabase/.temp/
+supabase/.branches/
+supabase/functions/.env
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Node
+node_modules/
+
+# OS
+.DS_Store
