@@ -412,3 +412,13 @@ enabled = true
 # declarative_schema_path = "./database"
 # JSON string passed through to pg-delta SQL formatting.
 # format_options = "{\"keywordCase\":\"upper\",\"indent\":2,\"maxWidth\":80,\"commaStyle\":\"trailing\"}"
+
+[functions.borrow]
+verify_jwt = true
+
+[functions.return]
+verify_jwt = true
+
+# Invoked by pg_cron; guarded by the x-cron-secret header instead of a JWT.
+[functions.overdue-reminders]
+verify_jwt = false
