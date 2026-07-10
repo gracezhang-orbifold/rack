@@ -9,7 +9,13 @@ alter table public.item_units      enable row level security;
 alter table public.borrow_sessions enable row level security;
 alter table public.device_events   enable row level security;
 
--- anon gets nothing at all; authenticated is governed by the policies below.
+-- Explicit grants: objects created in migrations don't reliably receive the
+-- platform's default privileges, so table access is granted here and RLS does
+-- the row-level enforcement. anon gets nothing at all.
+grant usage on schema public to authenticated, service_role;
+grant select, insert, update, delete on all tables in schema public to authenticated;
+grant all on all tables in schema public to service_role;
+grant execute on all functions in schema public to service_role;
 revoke all on all tables in schema public from anon;
 
 -- profiles -------------------------------------------------------------------
