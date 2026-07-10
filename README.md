@@ -57,6 +57,18 @@ supabase functions serve --env-file supabase/functions/.env &
 ./scripts/smoke-test.sh    # E2E: auth, RLS, borrow, race test, return, reminders
 ```
 
+If `psql` isn't installed on the host, run it through the DB container:
+
+```sh
+PSQL_BIN="docker exec -i supabase_db_rack psql" \
+SUPABASE_DB_URL="postgresql://postgres:postgres@127.0.0.1:5432/postgres" \
+./scripts/smoke-test.sh
+```
+
+To exercise the Seam-failure compensation path (borrow must cancel the session
+when the door never opens), restart the mock with `MOCK_SEAM_FAIL=1` and run
+`FAIL_MODE=1 ./scripts/smoke-test.sh`.
+
 Seeded dev users (local only): `admin@rack.local` / `user@rack.local`,
 password `password123`.
 

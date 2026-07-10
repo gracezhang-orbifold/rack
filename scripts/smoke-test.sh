@@ -23,13 +23,35 @@ check() { # check <desc> <expected> <actual>
   else FAIL=$((FAIL+1)); echo "  FAIL: $1 (expected $2, got $3)"; fi
 }
 
-sql() { psql "$DB_URL" -tA -c "$1"; }
+# Override PSQL_BIN if psql isn't installed on the host, e.g.
+#   PSQL_BIN="docker exec -i supabase_db_rack psql" \
+#   SUPABASE_DB_URL="postgresql://postgres:postgres@127.0.0.1:5432/postgres" ./scripts/smoke-test.sh
+sql() { ${PSQL_BIN:-psql} "$DB_URL" -tA -c "$1"; }
 
 signin() { # signin <email> -> prints access token
   curl -s "$API/auth/v1/token?grant_type=password" \
     -H "apikey: $ANON_KEY" -H "Content-Type: application/json" \
     -d "{\"email\":\"$1\",\"password\":\"password123\"}" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>console.log(JSON.parse(d).access_token??""))'
 }
+
+# FAIL_MODE=1: standalone run of the Seam-failure compensation path only.
+# Restart the mock first with MOCK_SEAM_FAIL=1 (the happy-path checks would
+# fail against a failing mock, so this mode skips them).
+if [ "${FAIL_MODE:-0}" = "1" ]; then
+  USER_JWT=$(signin user@rack.local)
+  GOPRO13=$(sql "select id from public.item_types where name = 'GoPro 13 Black';")
+  sql "update public.locks set seam_device_id = 'mock-device-1' where name = 'Main cabinet TTLock';" >/dev/null
+  BF=$(curl -s "$API/functions/v1/borrow" -X POST \
+    -H "apikey: $ANON_KEY" -H "Authorization: Bearer $USER_JWT" -H "Content-Type: application/json" \
+    -d "{\"item_type_id\":\"$GOPRO13\"}")
+  check "borrow reports unlock failure" "yes" "$(echo "$BF" | grep -q 'did not unlock' && echo yes || echo no)"
+  check "failed session cancelled (not stranded active)" "yes" \
+    "$([ "$(sql "select count(*) from public.borrow_sessions where status = 'cancelled';")" -ge 1 ] && echo yes || echo no)"
+  check "unlock_failed audit event logged" "yes" \
+    "$([ "$(sql "select count(*) from public.device_events where event_type = 'unlock_failed';")" -ge 1 ] && echo yes || echo no)"
+  echo; echo "== Results: $PASS passed, $FAIL failed"
+  exit $([ "$FAIL" -eq 0 ] && echo 0 || echo 1)
+fi
 
 echo "== Sign in seeded users"
 USER_JWT=$(signin user@rack.local)
@@ -86,12 +108,7 @@ RET=$(curl -s "$API/functions/v1/return" -X POST \
 check "return succeeds" "returned" "$(echo "$RET" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>console.log(JSON.parse(d).status??""))')"
 check "unit available again" "1" "$(sql "select count(*) from public.item_units u join public.borrow_sessions s on s.item_unit_id = u.id where s.id = '$SESSION1' and u.status = 'available';")"
 
-echo "== Seam failure path (restart mock with MOCK_SEAM_FAIL=1 to run) — skipped unless FAIL_MODE=1"
-if [ "${FAIL_MODE:-0}" = "1" ]; then
-  BF=$(borrow "$USER_JWT" "$GOPRO13")
-  check "borrow returns 502-style error" "yes" "$(echo "$BF" | grep -q 'did not unlock' && echo yes || echo no)"
-  check "no stranded active sessions for user" "0" "$(sql "select count(*) from public.borrow_sessions where status = 'active' and user_id = '22222222-2222-2222-2222-222222222222';")"
-fi
+echo "== Seam failure path: run separately with MOCK_SEAM_FAIL=1 on the mock, then FAIL_MODE=1 $0"
 
 echo "== Overdue reminders (idempotency)"
 B2=$(borrow "$USER_JWT" "$GOPRO13")
