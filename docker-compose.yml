@@ -18,6 +18,11 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql://rack:rack@db:5432/rack
+      MIGRATIONS_DIR: /db/migrations
+      WEB_DIST: /web/dist
+    volumes:
+      - ./db:/db:ro
+      - ./web/dist:/web/dist:ro
     ports: ["3000:3000"]
     depends_on:
       db: { condition: service_healthy }

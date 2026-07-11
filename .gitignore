@@ -1,8 +1,3 @@
-# Supabase
-supabase/.temp/
-supabase/.branches/
-supabase/functions/.env
-
 # Env / secrets
 .env
 .env.*
