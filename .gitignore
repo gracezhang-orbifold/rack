@@ -14,3 +14,6 @@ db/backups/
 # OS
 .DS_Store
 .superpowers/
+
+# Leftover local Supabase CLI state (implementation removed; dir may exist on disk)
+supabase/
