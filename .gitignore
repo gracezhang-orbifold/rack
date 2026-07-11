@@ -10,6 +10,12 @@ supabase/functions/.env
 
 # Node
 node_modules/
+api/node_modules/
+api/dist/
+
+# DB
+db/backups/
 
 # OS
 .DS_Store
+.superpowers/
