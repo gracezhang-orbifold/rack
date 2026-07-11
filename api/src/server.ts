@@ -3,6 +3,7 @@ import cookie from "@fastify/cookie";
 import { env } from "./env.js";
 import { authRoutes } from "./routes/auth.js";
 import { catalogRoutes } from "./routes/catalog.js";
+import { borrowRoutes } from "./routes/borrow.js";
 
 export async function buildServer() {
   const app = Fastify({ logger: env.NODE_ENV !== "test" });
@@ -10,5 +11,6 @@ export async function buildServer() {
   app.get("/api/health", async () => ({ ok: true }));
   await app.register(authRoutes);
   await app.register(catalogRoutes);
+  await app.register(borrowRoutes);
   return app;
 }
