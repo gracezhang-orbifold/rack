@@ -3,6 +3,9 @@ import { query } from "./db.js";
 import { sendEmail } from "./resend.js";
 
 export async function runReminders() {
+  // Garbage-collect expired login sessions on the same daily cadence — no
+  // separate job needed for a table that only ever grows otherwise.
+  await query(`delete from sessions where expires_at < now()`);
   const { rows } = await query(`
     select s.id, s.user_id, s.due_at, s.reminder_count, p.email, p.full_name,
            t.name as item_name
@@ -42,7 +45,10 @@ export async function runReminders() {
 }
 
 export function startReminderCron() {
+  // Pin the schedule to a real timezone (not the container's UTC clock) so
+  // "9am" reminders actually land at 9am for the office, regardless of what
+  // TZ the host/container happens to be running.
   cron.schedule("0 9 * * *", () => {
     runReminders().catch((err) => console.error("reminder run failed", err));
-  });
+  }, { timezone: process.env.TZ || "America/Los_Angeles" });
 }

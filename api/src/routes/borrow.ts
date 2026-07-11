@@ -78,8 +78,17 @@ export async function borrowRoutes(app: FastifyInstance) {
         if (!unlock.ok)
           return reply.code(502).send({ error: "cabinet did not unlock — item still checked out, please retry" });
       }
-      await query(`select mark_returned($1, $2, $3)`,
-        [session.id, req.user!.id, req.user!.role === "admin"]);
+      try {
+        await query(`select mark_returned($1, $2, $3)`,
+          [session.id, req.user!.id, req.user!.role === "admin"]);
+      } catch (e: any) {
+        // Another concurrent /api/return (or an admin) already closed this
+        // session between our status check above and this call — surface it
+        // as a 409, not an unhandled 500.
+        if (/not active/.test(e.message))
+          return reply.code(409).send({ error: "session is not active" });
+        throw e;
+      }
       return { session_id: session.id, status: "returned" };
     });
 }

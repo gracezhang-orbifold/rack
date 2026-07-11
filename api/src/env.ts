@@ -15,3 +15,9 @@ export const env = {
   CRON_ENABLED: req("CRON_ENABLED", "true") === "true",
   NODE_ENV: req("NODE_ENV", "development"),
 };
+
+const insecureSessionSecrets = new Set(["dev-secret", "change-me-long-random"]);
+if (env.NODE_ENV === "production" &&
+    (!env.SESSION_SECRET || insecureSessionSecrets.has(env.SESSION_SECRET))) {
+  throw new Error("SESSION_SECRET must be set in production");
+}
