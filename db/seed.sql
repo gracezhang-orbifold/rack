@@ -9,11 +9,13 @@
 
 insert into public.cabinets (id, name, location, notes)
 values ('aaaaaaaa-0000-0000-0000-000000000001', 'Main Equipment Cabinet', 'Office',
-        'SEED-TODO: set real location');
+        'SEED-TODO: set real location')
+on conflict (name) do nothing;
 
 insert into public.locks (cabinet_id, kind, name, seam_device_id, is_active)
-values ('aaaaaaaa-0000-0000-0000-000000000001', 'cabinet', 'Main cabinet TTLock',
-        null, true);
+select 'aaaaaaaa-0000-0000-0000-000000000001', 'cabinet', 'Main cabinet TTLock',
+       null, true
+where not exists (select 1 from public.locks where name = 'Main cabinet TTLock');
 -- After pairing via Seam Connect:
 --   update public.locks set seam_device_id = '<seam device id>'
 --   where name = 'Main cabinet TTLock';
@@ -21,6 +23,14 @@ values ('aaaaaaaa-0000-0000-0000-000000000001', 'cabinet', 'Main cabinet TTLock'
 -- ---------------------------------------------------------------------------
 -- Inventory
 -- ---------------------------------------------------------------------------
+-- NOTE: this block is intentionally NOT idempotent (unlike the cabinet/lock
+-- inserts above). `item_types.name` is unique, so re-running this seed will
+-- fail on the first duplicate row with a unique-violation. Making it a no-op
+-- on re-run would need `on conflict (name) do update ... returning id` to
+-- keep `v_type_id` populated for the item_units insert below, but that still
+-- wouldn't stop item_units from gaining duplicate rows each run (no unique
+-- constraint dedupes those) — so it was left as-is rather than seeding a new
+-- kind of bug. This seed is meant to run once against a fresh database.
 
 do $$
 declare

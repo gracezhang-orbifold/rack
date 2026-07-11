@@ -83,6 +83,35 @@ If `psql` isn't installed on the host, override `PSQL_BIN` for the smoke
 test, e.g. `PSQL_BIN="docker compose exec -T db psql -U rack rack" ./scripts/smoke-test.sh`
 (this is already the script's default).
 
+### Running the tests
+
+`npm test` (in `api/`) runs against a **separate** `rack_test` database, never
+the dev `rack` database — `resetDb()` (in `api/test/helpers.ts`) drops and
+recreates the whole `public` schema on every run, so it refuses to run
+against anything whose database name doesn't end in `_test`. `api/test/setup.ts`
+defaults `DATABASE_URL` to `postgresql://rack:rack@localhost:5433/rack_test`
+whenever it isn't already pointed at a `_test` database, so plain
+`npx vitest run` with no env vars is safe by default.
+
+Create the test database once (same Postgres container as dev, just a
+different database):
+
+```sh
+docker compose exec db psql -U rack -c 'create database rack_test'
+```
+
+Then:
+
+```sh
+cd api && npm test
+```
+
+### Non-standard local database
+
+If your `DATABASE_URL` for a manual test run points somewhere other than the
+default, keep the database name ending in `_test` — the guard in
+`resetDb()` throws otherwise rather than risk dropping real data.
+
 To exercise the Seam-failure compensation path (borrow must cancel the
 session when the door never opens): restart the mock with
 `MOCK_SEAM_FAIL=1`, then `POST /api/borrow` manually — expect a `502` and the
@@ -114,6 +143,21 @@ This builds `api/Dockerfile`, mounts `./db` (migrations + seed) and
 `./web/dist` (static frontend) read-only into the container, and runs
 pending migrations automatically on boot (`runMigrations()` before the
 server listens).
+
+**First boot only** — migrations run automatically, but seeding the real
+inventory does not; run it once, by hand, against the prod db container:
+
+```sh
+docker compose exec -T db psql -U rack rack < db/seed.sql
+```
+
+Re-running it is *not* fully safe (see the note above `item_types` in
+`db/seed.sql` — the cabinet/lock rows are idempotent, the inventory rows are
+not), so only do this against a freshly-migrated, empty database.
+
+The daily overdue-reminder email fires at 09:00 in the `TZ` timezone (see
+`.env.example`; defaults to `America/Los_Angeles`), not the container's UTC
+clock.
 
 Nightly backups — host cron, not container cron:
 

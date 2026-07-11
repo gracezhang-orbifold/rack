@@ -5,7 +5,7 @@ services:
       POSTGRES_USER: rack
       POSTGRES_PASSWORD: rack
       POSTGRES_DB: rack
-    ports: ["5433:5432"]
+    ports: ["127.0.0.1:5433:5432"]
     volumes: ["rack_pgdata:/var/lib/postgresql/data"]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U rack"]
