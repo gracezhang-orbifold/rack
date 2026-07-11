@@ -3,7 +3,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type pg from "pg";
 
-const DEFAULT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../db/migrations");
+const DEFAULT_DIR = process.env.MIGRATIONS_DIR
+  ?? path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../db/migrations");
 
 export async function runMigrations(pool: pg.Pool, dir = DEFAULT_DIR) {
   await pool.query(`create table if not exists _migrations (
