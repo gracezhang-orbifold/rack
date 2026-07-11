@@ -5,6 +5,7 @@ import { authRoutes } from "./routes/auth.js";
 import { catalogRoutes } from "./routes/catalog.js";
 import { borrowRoutes } from "./routes/borrow.js";
 import { adminRoutes } from "./routes/admin.js";
+import { runReminders } from "./reminders.js";
 
 export async function buildServer() {
   const app = Fastify({ logger: env.NODE_ENV !== "test" });
@@ -14,5 +15,8 @@ export async function buildServer() {
   await app.register(catalogRoutes);
   await app.register(borrowRoutes);
   await app.register(adminRoutes);
+  if (env.NODE_ENV !== "production") {
+    app.post("/api/dev/run-reminders", async () => runReminders());
+  }
   return app;
 }
