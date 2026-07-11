@@ -78,24 +78,29 @@ export async function adminRoutes(app: FastifyInstance) {
       return { created: rows.length };
     });
 
+  const UNIT_STATUSES = new Set(["available", "in_use", "needs_repair", "retired", "missing"]);
+
   app.patch<{ Params: { id: string };
     Body: { status?: string; asset_id?: string; owner?: string; notes?: string } }>(
     "/api/admin/item-units/:id", async (req, reply) => {
       const { status, asset_id, owner, notes } = req.body ?? {};
-      if (status === "available") {
-        const active = await query(
-          `select 1 from borrow_sessions where item_unit_id = $1 and status = 'active'`,
-          [req.params.id]);
-        if (active.rows[0])
-          return reply.code(409).send({ error: "unit has an active borrow session — return it instead" });
-      }
+      if (status !== undefined && !UNIT_STATUSES.has(status))
+        return reply.code(400).send({ error: "invalid status" });
+      // Atomically guard the transition: the WHERE clause excludes flipping to
+      // 'available' while an active borrow session still exists, so there is no
+      // window between a check and the update for a concurrent borrow to race.
       const { rows } = await query(`
         update item_units set
           status = coalesce($2::unit_status, status), asset_id = coalesce($3, asset_id),
           owner = coalesce($4, owner), notes = coalesce($5, notes)
-        where id = $1 returning *`,
+        where id = $1
+          and ($2::text is null or $2::unit_status <> 'available' or not exists (
+            select 1 from borrow_sessions where item_unit_id = $1 and status = 'active'))
+        returning *`,
         [req.params.id, status ?? null, asset_id ?? null, owner ?? null, notes ?? null]);
-      if (!rows[0]) return reply.code(404).send({ error: "not found" });
-      return rows[0];
+      if (rows[0]) return rows[0];
+      const exists = await query(`select 1 from item_units where id = $1`, [req.params.id]);
+      if (!exists.rows[0]) return reply.code(404).send({ error: "not found" });
+      return reply.code(409).send({ error: "unit has an active borrow session — return it instead" });
     });
 }
