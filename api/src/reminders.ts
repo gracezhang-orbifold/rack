@@ -17,25 +17,32 @@ export async function runReminders() {
   let emailed = 0; const failures: string[] = [];
   for (const sessions of byUser.values()) {
     const { email, full_name } = sessions[0];
-    const items = sessions.map((s) =>
-      `<li>${s.item_name} — due ${new Date(s.due_at).toLocaleDateString("en-US", { dateStyle: "medium" })}</li>`).join("");
-    const result = await sendEmail({
-      to: email,
-      subject: `Rack: you have ${sessions.length} overdue item${sessions.length > 1 ? "s" : ""}`,
-      html: `<p>Hi ${full_name ?? "there"},</p>
+    try {
+      const items = sessions.map((s) =>
+        `<li>${s.item_name} — due ${new Date(s.due_at).toLocaleDateString("en-US", { dateStyle: "medium" })}</li>`).join("");
+      const result = await sendEmail({
+        to: email,
+        subject: `Rack: you have ${sessions.length} overdue item${sessions.length > 1 ? "s" : ""}`,
+        html: `<p>Hi ${full_name ?? "there"},</p>
 <p>The following borrowed equipment is overdue. Please return it to the cabinet:</p>
 <ul>${items}</ul><p>— Rack</p>`,
-    });
-    if (result.ok) {
-      emailed++;
-      for (const s of sessions)
-        await query(`update borrow_sessions set last_reminded_at = now(),
-          reminder_count = $2 where id = $1`, [s.id, s.reminder_count + 1]);
-    } else failures.push(email);
+      });
+      if (result.ok) {
+        emailed++;
+        for (const s of sessions)
+          await query(`update borrow_sessions set last_reminded_at = now(),
+            reminder_count = $2 where id = $1`, [s.id, s.reminder_count + 1]);
+      } else failures.push(email);
+    } catch (err) {
+      console.error("reminder failed for user", email, err);
+      failures.push(email);
+    }
   }
   return { overdue_sessions: rows.length, users_emailed: emailed, failures };
 }
 
 export function startReminderCron() {
-  cron.schedule("0 9 * * *", () => { void runReminders(); });
+  cron.schedule("0 9 * * *", () => {
+    runReminders().catch((err) => console.error("reminder run failed", err));
+  });
 }
