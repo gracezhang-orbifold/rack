@@ -47,4 +47,13 @@ describe("admin", () => {
       payload: { status: "available" }, cookies: { rack_session: admin } });
     expect(res.statusCode).toBe(409);
   });
+  it("rejects an invalid status value with 400", async () => {
+    const t = await pool.query(`select id from item_types where name = 'Manus Gloves'`);
+    const u = await pool.query(`select id from item_units where item_type_id = $1 limit 1`,
+      [t.rows[0].id]);
+    const res = await app.inject({ method: "PATCH",
+      url: `/api/admin/item-units/${u.rows[0].id}`,
+      payload: { status: "bogus" }, cookies: { rack_session: admin } });
+    expect(res.statusCode).toBe(400);
+  });
 });
