@@ -8,6 +8,12 @@ node_modules/
 api/node_modules/
 api/dist/
 
+# Web build + test output
+web/dist/
+web/node_modules/
+web/test-results/
+web/playwright-report/
+
 # DB
 db/backups/
 
@@ -17,3 +23,6 @@ db/backups/
 
 # Leftover local Supabase CLI state (implementation removed; dir may exist on disk)
 supabase/
+
+# TS build info
+web/*.tsbuildinfo
