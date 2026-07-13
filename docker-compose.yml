@@ -1,0 +1,31 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: rack
+      POSTGRES_PASSWORD: rack
+      POSTGRES_DB: rack
+    ports: ["127.0.0.1:5433:5432"]
+    volumes: ["rack_pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rack"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+  api:
+    build: ./api
+    profiles: ["prod"]          # dev runs the API on the host via tsx
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://rack:rack@db:5432/rack
+      MIGRATIONS_DIR: /db/migrations
+      WEB_DIST: /web/dist
+      NODE_ENV: production
+    volumes:
+      - ./db:/db:ro
+      - ./web/dist:/web/dist:ro
+    ports: ["3000:3000"]
+    depends_on:
+      db: { condition: service_healthy }
+volumes:
+  rack_pgdata:

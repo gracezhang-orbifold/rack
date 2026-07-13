@@ -1,8 +1,3 @@
-# Supabase
-supabase/.temp/
-supabase/.branches/
-supabase/functions/.env
-
 # Env / secrets
 .env
 .env.*
@@ -10,6 +5,15 @@ supabase/functions/.env
 
 # Node
 node_modules/
+api/node_modules/
+api/dist/
+
+# DB
+db/backups/
 
 # OS
 .DS_Store
+.superpowers/
+
+# Leftover local Supabase CLI state (implementation removed; dir may exist on disk)
+supabase/
