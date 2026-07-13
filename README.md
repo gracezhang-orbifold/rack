@@ -83,6 +83,34 @@ If `psql` isn't installed on the host, override `PSQL_BIN` for the smoke
 test, e.g. `PSQL_BIN="docker compose exec -T db psql -U rack rack" ./scripts/smoke-test.sh`
 (this is already the script's default).
 
+### Frontend
+
+The web app is a Vite + React SPA in `web/`.
+
+```sh
+cd web && npm install
+npm run dev     # Vite on http://localhost:5173, proxies /api → :3000 (run the API too, see above)
+npm test        # Vitest + React Testing Library unit tests
+npm run build   # production build → web/dist (tsc + vite)
+```
+
+`web/dist` is gitignored and built at deploy time — the API serves it with an
+SPA fallback in production, and `docker compose --profile prod up` mounts
+`./web/dist` into the API container, so run `npm --prefix web run build`
+before deploying.
+
+End-to-end test (`npm run e2e`, Playwright — starts the Vite dev server
+itself) expects the dev stack from the block above: db migrated + seeded with
+dev users, mock Seam on `:9911`, and the API on `:3000` with
+`SEAM_API_URL`/`RESEND_API_URL` pointed at the mock. Pair the seeded lock with
+the mock device once:
+
+```sh
+docker compose exec -T db psql -U rack rack \
+  -c "update locks set seam_device_id='mock-device-1' where name='Main cabinet TTLock';"
+(cd web && npx playwright install chromium && npm run e2e)
+```
+
 ### Running the tests
 
 `npm test` (in `api/`) runs against a **separate** `rack_test` database, never
