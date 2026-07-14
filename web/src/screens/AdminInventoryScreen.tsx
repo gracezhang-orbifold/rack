@@ -39,10 +39,11 @@ function ReturnQuestionsEditor({ type }: { type: AdminItemType }) {
   const update = useUpdateItemType();
   const toast = useToast();
   const [draft, setDraft] = useState<ReturnQuestion[]>(type.return_questions);
+  const [saved, setSaved] = useState<ReturnQuestion[]>(type.return_questions);
   const [label, setLabel] = useState("");
   const [kind, setKind] = useState<"text" | "yes_no">("text");
   const [flag, setFlag] = useState(false);
-  const dirty = JSON.stringify(draft) !== JSON.stringify(type.return_questions);
+  const dirty = JSON.stringify(draft) !== JSON.stringify(saved);
 
   const add = () => {
     if (!label.trim()) return;
@@ -54,7 +55,10 @@ function ReturnQuestionsEditor({ type }: { type: AdminItemType }) {
   };
   const save = () =>
     update.mutate({ id: type.id, body: { return_questions: draft } }, {
-      onSuccess: () => toast("Return questions saved."),
+      onSuccess: (r) => {
+        setSaved(r.return_questions); setDraft(r.return_questions);
+        toast("Return questions saved.");
+      },
       onError: (e) => toast(errorMessage(e), "error"),
     });
 
