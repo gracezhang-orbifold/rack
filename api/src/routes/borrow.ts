@@ -93,6 +93,16 @@ export async function borrowRoutes(app: FastifyInstance) {
         return reply.code(409).send({
           error: "you have an unconfirmed checkout — scan the label on the item you took (My Items tab) before borrowing again",
         });
+      // Overdue loans freeze further borrowing: return the item or extend
+      // its deadline first. Requests (waitlist/notify/reserve) stay allowed.
+      const { rows: overdue } = await query(`
+        select 1 from borrow_sessions
+        where user_id = $1 and status = 'active' and due_at < now()
+        limit 1`, [req.user!.id]);
+      if (overdue[0])
+        return reply.code(409).send({
+          error: "you have an overdue item — return it or extend the deadline before borrowing again",
+        });
       let session;
       try {
         const { rows } = await query(`select * from borrow_unit($1, $2, $3, $4)`,
