@@ -9,12 +9,14 @@ import { validateQuestions, renderAnswers, type ReturnQuestion, type ReturnAnswe
 async function accessoryLinkError(value: unknown, selfId: string | null): Promise<string | null> {
   if (value === null) return null;
   if (typeof value !== "string" || !value) return "accessory_type_id must be an item type id or null";
-  if (selfId !== null && value === selfId) return "an item type cannot be its own accessory kit";
+  if (selfId !== null && value.toLowerCase() === selfId.toLowerCase())
+    return "an item type cannot be its own accessory kit";
   try {
     const { rows } = await query(`select 1 from item_types where id = $1`, [value]);
     if (!rows[0]) return "accessory type not found";
-  } catch {
-    return "accessory_type_id must be an item type id or null"; // malformed uuid
+  } catch (e: any) {
+    if (e?.code === "22P02") return "accessory_type_id must be an item type id or null"; // malformed uuid
+    throw e; // real DB failure — don't blame the client
   }
   return null;
 }
@@ -151,7 +153,9 @@ export async function adminRoutes(app: FastifyInstance) {
         const err = await accessoryLinkError(req.body!.accessory_type_id, req.params.id);
         if (err) return reply.code(400).send({ error: err });
       }
-      const { rows } = await query(`
+      let rows;
+      try {
+        ({ rows } = await query(`
         update item_types set
           name = coalesce($2, name), category = coalesce($3, category),
           notes = coalesce($4, notes),
@@ -160,7 +164,12 @@ export async function adminRoutes(app: FastifyInstance) {
         where id = $1 returning *`,
         [req.params.id, req.body?.name ?? null, req.body?.category ?? null, req.body?.notes ?? null,
          return_questions === undefined ? null : JSON.stringify(return_questions),
-         hasAccessory, hasAccessory ? (req.body!.accessory_type_id as string | null) : null]);
+         hasAccessory, hasAccessory ? (req.body!.accessory_type_id as string | null) : null]));
+      } catch (e: any) {
+        if (e?.code === "23514")
+          return reply.code(400).send({ error: "an item type cannot be its own accessory kit" });
+        throw e;
+      }
       if (!rows[0]) return reply.code(404).send({ error: "not found" });
       return rows[0];
     });
