@@ -8,6 +8,8 @@ import { BrowseScreen } from "./screens/BrowseScreen";
 import { MyItemsScreen } from "./screens/MyItemsScreen";
 import { AdminOverviewScreen } from "./screens/AdminOverviewScreen";
 import { AdminInventoryScreen } from "./screens/AdminInventoryScreen";
+import { AdminLabelsScreen } from "./screens/AdminLabelsScreen";
+import { ScanScreen } from "./screens/ScanScreen";
 
 export default function App() {
   const me = useMe();
@@ -29,8 +31,10 @@ export default function App() {
       <Route element={<Layout me={me.data} />}>
         <Route path="/" element={<BrowseScreen />} />
         <Route path="/my-items" element={<MyItemsScreen />} />
+        <Route path="/scan/:assetId" element={<ScanScreen />} />
         <Route path="/admin" element={<AdminOnly me={me.data}><AdminOverviewScreen /></AdminOnly>} />
         <Route path="/admin/inventory" element={<AdminOnly me={me.data}><AdminInventoryScreen /></AdminOnly>} />
+        <Route path="/admin/labels" element={<AdminOnly me={me.data}><AdminLabelsScreen /></AdminOnly>} />
       </Route>
     </Routes>
   );

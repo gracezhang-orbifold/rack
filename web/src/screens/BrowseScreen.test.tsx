@@ -6,8 +6,8 @@ import { BrowseScreen } from "./BrowseScreen";
 import { ToastProvider } from "../components/ui";
 
 const AVAIL = [
-  { item_type_id: "t1", name: "GoPro 13 Black", category: "Camera", notes: null, total_units: 3, available_units: 3, in_use_units: 0, needs_repair_units: 0, missing_units: 0 },
-  { item_type_id: "t2", name: "Manus Gloves", category: "Tracking", notes: null, total_units: 1, available_units: 0, in_use_units: 1, needs_repair_units: 0, missing_units: 0 },
+  { item_type_id: "t1", name: "GoPro 13 Black", category: "Camera", notes: null, total_units: 3, available_units: 3, in_use_units: 0, needs_repair_units: 0, missing_units: 0, asset_ids: ["RACK-0001"] },
+  { item_type_id: "t2", name: "Manus Gloves", category: "Tracking", notes: null, total_units: 1, available_units: 0, in_use_units: 1, needs_repair_units: 0, missing_units: 0, asset_ids: [] },
 ];
 
 function wrap() {
@@ -27,12 +27,27 @@ describe("BrowseScreen", () => {
     await waitFor(() => expect(screen.queryByText("Manus Gloves")).not.toBeInTheDocument());
   });
 
-  it("disables Borrow when nothing is available", async () => {
+  it("filters by asset id", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve(AVAIL) }));
     wrap();
+    await screen.findByText("GoPro 13 Black");
+    await userEvent.type(screen.getByPlaceholderText(/search/i), "RACK-0001");
+    await waitFor(() => expect(screen.queryByText("Manus Gloves")).not.toBeInTheDocument());
+    expect(screen.getByText("GoPro 13 Black")).toBeInTheDocument();
+  });
+
+  it("offers waitlist/notify/reserve options when nothing is available", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (url: RequestInfo | URL) => {
+      const path = String(url);
+      const body = path.endsWith("/api/availability") ? AVAIL : [];
+      return { ok: true, status: 200, json: () => Promise.resolve(body) } as Response;
+    }));
+    wrap();
     await screen.findByText("Manus Gloves");
-    const buttons = screen.getAllByRole("button", { name: /borrow/i });
-    // GoPro enabled, Manus disabled
-    expect(buttons.some((b) => (b as HTMLButtonElement).disabled)).toBe(true);
+    // Unavailable items get an Options button instead of Borrow.
+    await userEvent.click(screen.getByRole("button", { name: "Options" }));
+    expect(await screen.findByRole("button", { name: "Join waitlist" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Notify me when available" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reserve for a future time" })).toBeInTheDocument();
   });
 });

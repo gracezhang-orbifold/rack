@@ -22,6 +22,15 @@ export const useAvailability = () => useQuery({ queryKey: ["availability"], quer
 export const useMyBorrows = () => useQuery({ queryKey: ["my-borrows"], queryFn: api.myBorrows });
 export const useAdminBorrows = () => useQuery({ queryKey: ["admin-borrows"], queryFn: api.adminBorrows });
 export const useAdminInventory = () => useQuery({ queryKey: ["inventory"], queryFn: api.adminItemTypes });
+export const useMyRequests = () => useQuery({ queryKey: ["my-requests"], queryFn: api.myRequests });
+export const useUnitByAsset = (assetId: string) =>
+  useQuery({ queryKey: ["unit-by-asset", assetId], queryFn: () => api.unitByAsset(assetId), retry: false });
+export const useUnitHistory = (unitId: string | null) =>
+  useQuery({
+    queryKey: ["unit-history", unitId],
+    queryFn: () => api.unitHistory(unitId!),
+    enabled: unitId !== null,
+  });
 
 export function useLogin() {
   const qc = useQueryClient();
@@ -39,7 +48,16 @@ export function useSignup() {
 }
 export function useLogout() {
   const qc = useQueryClient();
-  return useMutation({ mutationFn: () => api.logout(), onSuccess: () => qc.clear() });
+  return useMutation({
+    mutationFn: () => api.logout(),
+    // qc.clear() would empty the cache without notifying mounted observers,
+    // leaving the signed-in UI on screen. Setting ["me"] to null re-renders
+    // the app to the auth screen; then drop the user's other cached data.
+    onSuccess: () => {
+      qc.setQueryData(["me"], null);
+      qc.removeQueries({ predicate: (q) => q.queryKey[0] !== "me" });
+    },
+  });
 }
 
 function invalidateBorrowViews(qc: ReturnType<typeof useQueryClient>) {
@@ -51,13 +69,61 @@ function invalidateBorrowViews(qc: ReturnType<typeof useQueryClient>) {
 export function useBorrow() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (v: { item_type_id: string; days: number }) => api.borrow(v.item_type_id, v.days),
+    mutationFn: (v: { item_type_id: string; days: number; unit_id?: string }) =>
+      api.borrow(v.item_type_id, v.days, v.unit_id),
     onSuccess: () => invalidateBorrowViews(qc),
+  });
+}
+export function useConfirmBorrow() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { session_id: string; asset_id: string }) => api.confirmBorrow(v.session_id, v.asset_id),
+    onSuccess: () => invalidateBorrowViews(qc),
+  });
+}
+export function useCreateRequest() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.createRequest,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["my-requests"] }),
+  });
+}
+export function useCancelRequest() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.cancelRequest(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["my-requests"] }),
+  });
+}
+export function useAssignAssetIds() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.assignAssetIds,
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["inventory"] }); qc.invalidateQueries({ queryKey: ["availability"] }); },
   });
 }
 export function useReturn() {
   const qc = useQueryClient();
-  return useMutation({ mutationFn: (session_id: string) => api.returnItem(session_id), onSuccess: () => invalidateBorrowViews(qc) });
+  return useMutation({
+    mutationFn: (v: { session_id: string; asset_id?: string; damaged?: boolean; note?: string }) =>
+      api.returnItem(v),
+    onSuccess: () => invalidateBorrowViews(qc),
+  });
+}
+export function useExtend() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { session_id: string; days: number }) => api.extendBorrow(v.session_id, v.days),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["my-borrows"] }),
+  });
+}
+export const useSettings = () => useQuery({ queryKey: ["settings"], queryFn: api.mySettings });
+export function useUpdateSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.updateSettings,
+    onSuccess: (s) => qc.setQueryData(["settings"], s),
+  });
 }
 export function useAdminReturn() {
   const qc = useQueryClient();

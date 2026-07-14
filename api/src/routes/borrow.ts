@@ -2,6 +2,33 @@ import type { FastifyInstance } from "fastify";
 import { query } from "../db.js";
 import { requireUser } from "../auth.js";
 import { unlockDoor } from "../seam.js";
+import { processItemAvailability } from "../requests.js";
+import { escapeHtml as esc, sendEmail } from "../resend.js";
+
+// Damaged return: tell every admin what came back broken and who reported it.
+// Best-effort — the return itself must not fail on email trouble.
+async function notifyAdminsOfDamage(sessionId: string, note: string, reporter: { email: string; full_name: string | null }) {
+  try {
+    const { rows: [item] } = await query(`
+      select t.name, u.asset_id from borrow_sessions s
+      join item_units u on u.id = s.item_unit_id
+      join item_types t on t.id = u.item_type_id where s.id = $1`, [sessionId]);
+    const { rows: admins } = await query(`select email from profiles where role = 'admin'`);
+    const label = item ? `${item.name}${item.asset_id ? ` (${item.asset_id})` : ""}` : "an item";
+    for (const a of admins) {
+      const result = await sendEmail({
+        to: a.email,
+        subject: `Rack: damage reported on ${label}`,
+        html: `<p>${esc(reporter.full_name ?? reporter.email)} returned <strong>${esc(label)}</strong> and reported damage:</p>
+<blockquote>${esc(note)}</blockquote>
+<p>The unit has been set to <strong>needs repair</strong> and won't be borrowable until an admin clears it.</p><p>— Rack</p>`,
+      });
+      if (!result.ok) console.error("damage email failed for", a.email);
+    }
+  } catch (err) {
+    console.error("damage notification failed for session", sessionId, err);
+  }
+}
 
 async function lockForUnit(itemUnitId: string) {
   const { rows } = await query(`
@@ -23,17 +50,29 @@ async function logEvent(e: { lock_id?: string; session_id: string; user_id: stri
 }
 
 export async function borrowRoutes(app: FastifyInstance) {
-  app.post<{ Body: { item_type_id?: string; days?: number } }>(
+  app.post<{ Body: { item_type_id?: string; days?: number; unit_id?: string } }>(
     "/api/borrow", { preHandler: requireUser }, async (req, reply) => {
-      const { item_type_id, days } = req.body ?? {};
+      const { item_type_id, days, unit_id } = req.body ?? {};
       if (!item_type_id) return reply.code(400).send({ error: "item_type_id is required" });
+      // A checkout whose label scan was skipped blocks further borrowing —
+      // the database doesn't know which physical unit the user actually has.
+      const { rows: pending } = await query(`
+        select 1 from borrow_sessions s
+        join item_units u on u.id = s.item_unit_id
+        where s.user_id = $1 and s.status = 'active'
+          and s.unit_confirmed_at is null and u.asset_id is not null
+        limit 1`, [req.user!.id]);
+      if (pending[0])
+        return reply.code(409).send({
+          error: "you have an unconfirmed checkout — scan the label on the item you took (My Items tab) before borrowing again",
+        });
       let session;
       try {
-        const { rows } = await query(`select * from borrow_unit($1, $2, $3)`,
-          [req.user!.id, item_type_id, days ?? 7]);
+        const { rows } = await query(`select * from borrow_unit($1, $2, $3, $4)`,
+          [req.user!.id, item_type_id, days ?? 7, unit_id ?? null]);
         session = rows[0];
       } catch (e: any) {
-        const status = /no units available/.test(e.message) ? 409 : 400;
+        const status = /no units available|not available/.test(e.message) ? 409 : 400;
         return reply.code(status).send({ error: e.message.replace(/^.*?: /, "") });
       }
       const lock = await lockForUnit(session.item_unit_id);
@@ -55,17 +94,77 @@ export async function borrowRoutes(app: FastifyInstance) {
       return { ...session, unlock: "ok" };
     });
 
-  app.post<{ Body: { session_id?: string } }>(
-    "/api/return", { preHandler: requireUser }, async (req, reply) => {
-      const { session_id } = req.body ?? {};
+  // After unlocking, the borrower scans the label on the item they took;
+  // this binds the session to that physical unit (swapping if it differs
+  // from the unit borrow_unit happened to claim).
+  app.post<{ Body: { session_id?: string; asset_id?: string } }>(
+    "/api/borrow/confirm", { preHandler: requireUser }, async (req, reply) => {
+      const { session_id, asset_id } = req.body ?? {};
+      if (!session_id || !asset_id)
+        return reply.code(400).send({ error: "session_id and asset_id are required" });
+      const { rows: [unit] } = await query(
+        `select id from item_units where asset_id = $1 and status <> 'retired'`, [asset_id]);
+      if (!unit) return reply.code(404).send({ error: "no item with this asset id" });
+      try {
+        const { rows } = await query(`select * from confirm_borrow_unit($1, $2, $3)`,
+          [session_id, req.user!.id, unit.id]);
+        return { ...rows[0], asset_id, confirmed: true };
+      } catch (e: any) {
+        const msg = e.message.replace(/^.*?: /, "");
+        const status = /not found/.test(msg) ? 404
+          : /not allowed/.test(msg) ? 403
+          : /not active|not available|different item type/.test(msg) ? 409 : 400;
+        return reply.code(status).send({ error: msg });
+      }
+    });
+
+  // Extend an active loan's due date (owner only, capped server-side).
+  app.post<{ Body: { session_id?: string; days?: number } }>(
+    "/api/borrow/extend", { preHandler: requireUser }, async (req, reply) => {
+      const { session_id, days } = req.body ?? {};
       if (!session_id) return reply.code(400).send({ error: "session_id is required" });
+      try {
+        const { rows } = await query(`select * from extend_borrow($1, $2, $3)`,
+          [session_id, req.user!.id, days ?? 7]);
+        return rows[0];
+      } catch (e: any) {
+        const msg = e.message.replace(/^.*?: /, "");
+        const status = /not found/.test(msg) ? 404
+          : /not allowed/.test(msg) ? 403
+          : /not active|beyond 90 days/.test(msg) ? 409 : 400;
+        return reply.code(status).send({ error: msg });
+      }
+    });
+
+  app.post<{ Body: { session_id?: string; asset_id?: string; damaged?: boolean; note?: string } }>(
+    "/api/return", { preHandler: requireUser }, async (req, reply) => {
+      const { session_id, asset_id, damaged, note } = req.body ?? {};
+      if (!session_id) return reply.code(400).send({ error: "session_id is required" });
+      if (damaged !== undefined && typeof damaged !== "boolean")
+        return reply.code(400).send({ error: "damaged must be a boolean" });
+      if (note !== undefined && (typeof note !== "string" || note.length > 500))
+        return reply.code(400).send({ error: "note must be a string of at most 500 characters" });
+      if (damaged && !note?.trim())
+        return reply.code(400).send({ error: "please describe the damage" });
       const { rows } = await query(
-        `select id, status, item_unit_id, user_id from borrow_sessions where id = $1`, [session_id]);
+        `select s.id, s.status, s.item_unit_id, s.user_id, u.asset_id
+         from borrow_sessions s join item_units u on u.id = s.item_unit_id
+         where s.id = $1`, [session_id]);
       const session = rows[0];
       if (!session || (session.user_id !== req.user!.id && req.user!.role !== "admin"))
         return reply.code(404).send({ error: "session not found" });
       if (session.status !== "active")
         return reply.code(409).send({ error: "session is not active" });
+      // Labeled units must be scanned back in, so the return is confirmed
+      // against the physical item. The exemption is for returning on someone
+      // else's behalf (necessarily an admin, per the ownership guard above) —
+      // an admin returning their own loan scans like everyone else.
+      if (session.asset_id && session.user_id === req.user!.id) {
+        if (!asset_id)
+          return reply.code(400).send({ error: "scan the item's label to confirm the return" });
+        if (asset_id !== session.asset_id)
+          return reply.code(409).send({ error: `that label doesn't match — this loan is for ${session.asset_id}` });
+      }
       const lock = await lockForUnit(session.item_unit_id);
       if (lock) {
         await logEvent({ lock_id: lock.id, session_id: session.id, user_id: req.user!.id,
@@ -79,8 +178,9 @@ export async function borrowRoutes(app: FastifyInstance) {
           return reply.code(502).send({ error: "cabinet did not unlock — item still checked out, please retry" });
       }
       try {
-        await query(`select mark_returned($1, $2, $3)`,
-          [session.id, req.user!.id, req.user!.role === "admin"]);
+        await query(`select mark_returned($1, $2, $3, $4, $5)`,
+          [session.id, req.user!.id, req.user!.role === "admin",
+           damaged ?? false, note?.trim() || null]);
       } catch (e: any) {
         // Another concurrent /api/return (or an admin) already closed this
         // session between our status check above and this call — surface it
@@ -89,6 +189,14 @@ export async function borrowRoutes(app: FastifyInstance) {
           return reply.code(409).send({ error: "session is not active" });
         throw e;
       }
-      return { session_id: session.id, status: "returned" };
+      if (damaged) {
+        await notifyAdminsOfDamage(session.id, note!, req.user!);
+      } else {
+        // Only a clean return frees the unit — damaged goes to needs_repair.
+        const { rows: [unit] } = await query(
+          `select item_type_id from item_units where id = $1`, [session.item_unit_id]);
+        if (unit) await processItemAvailability(unit.item_type_id);
+      }
+      return { session_id: session.id, status: "returned", damaged: damaged ?? false };
     });
 }

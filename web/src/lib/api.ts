@@ -1,5 +1,6 @@
 import type {
   Me, AvailabilityItem, MyBorrows, BorrowResult, AdminBorrows, AdminItemType, AdminUnit,
+  ScannedUnit, ItemRequest, RequestKind, UnitHistoryRow, ReminderSettings,
 } from "./types";
 
 export class ApiError extends Error {
@@ -12,7 +13,12 @@ export class ApiError extends Error {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {
     credentials: "include",
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+    // Fastify rejects an empty body when Content-Type is application/json,
+    // so only set it on requests that actually carry one.
+    headers: {
+      ...(init?.body !== undefined ? { "Content-Type": "application/json" } : {}),
+      ...(init?.headers ?? {}),
+    },
     ...init,
   });
   const body = await res.json().catch(() => ({}));
@@ -33,8 +39,28 @@ export const api = {
 
   availability: () => request<AvailabilityItem[]>("/availability"),
   myBorrows: () => request<MyBorrows>("/my-borrows"),
-  borrow: (item_type_id: string, days: number) => request<BorrowResult>("/borrow", post({ item_type_id, days })),
-  returnItem: (session_id: string) => request<{ session_id: string; status: string }>("/return", post({ session_id })),
+  borrow: (item_type_id: string, days: number, unit_id?: string) =>
+    request<BorrowResult>("/borrow", post({ item_type_id, days, ...(unit_id ? { unit_id } : {}) })),
+  returnItem: (v: { session_id: string; asset_id?: string; damaged?: boolean; note?: string }) =>
+    request<{ session_id: string; status: string; damaged: boolean }>("/return", post({
+      session_id: v.session_id,
+      ...(v.asset_id ? { asset_id: v.asset_id } : {}),
+      ...(v.damaged ? { damaged: true, note: v.note } : {}),
+    })),
+  extendBorrow: (session_id: string, days: number) =>
+    request<{ session_id: string; due_at: string }>("/borrow/extend", post({ session_id, days })),
+  mySettings: () => request<ReminderSettings>("/me/settings"),
+  updateSettings: (body: Partial<ReminderSettings>) => request<ReminderSettings>("/me/settings", patch(body)),
+  confirmBorrow: (session_id: string, asset_id: string) =>
+    request<{ session_id: string; item_unit_id: string; asset_id: string; confirmed: true }>(
+      "/borrow/confirm", post({ session_id, asset_id })),
+  unitByAsset: (assetId: string) => request<ScannedUnit>(`/units/by-asset/${encodeURIComponent(assetId)}`),
+
+  myRequests: () => request<ItemRequest[]>("/requests"),
+  createRequest: (body: { item_type_id: string; kind: RequestKind; start_at?: string; days?: number }) =>
+    request<ItemRequest>("/requests", post(body)),
+  cancelRequest: (id: string) =>
+    request<{ id: string; status: string }>(`/requests/${encodeURIComponent(id)}`, { method: "DELETE" }),
 
   adminBorrows: () => request<AdminBorrows>("/admin/borrows"),
   adminReturn: (session_id: string) => request<{ session_id: string; status: string }>("/admin/return", post({ session_id })),
@@ -47,4 +73,6 @@ export const api = {
     request<{ created: number }>("/admin/item-units", post(body)),
   updateUnit: (id: string, body: { status?: string; asset_id?: string; owner?: string; notes?: string }) =>
     request<AdminUnit>(`/admin/item-units/${id}`, patch(body)),
+  unitHistory: (id: string) => request<UnitHistoryRow[]>(`/admin/item-units/${encodeURIComponent(id)}/history`),
+  assignAssetIds: () => request<{ assigned: number }>("/admin/assign-asset-ids", post()),
 };

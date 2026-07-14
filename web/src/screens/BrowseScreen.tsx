@@ -1,8 +1,11 @@
 import { useState } from "react";
-import { useAvailability, useBorrow } from "../hooks/queries";
+import { useAvailability, useBorrow, useConfirmBorrow } from "../hooks/queries";
 import { filterInventory, groupByCategory } from "../lib/filter";
 import { borrowResultMessage, errorMessage } from "../lib/borrowResult";
+import { parseAssetId } from "../lib/scan";
 import { Badge, Button, Input, Sheet, Spinner, useToast } from "../components/ui";
+import { RequestOptions } from "../components/RequestOptions";
+import { QrScanner } from "../components/QrScanner";
 import { ApiError } from "../lib/api";
 import type { AvailabilityItem, BorrowResult } from "../lib/types";
 
@@ -14,11 +17,41 @@ export function BrowseScreen() {
   const [selected, setSelected] = useState<AvailabilityItem | null>(null);
   const [days, setDays] = useState(7);
   const [result, setResult] = useState<BorrowResult | null>(null);
+  const [confirmedAsset, setConfirmedAsset] = useState<string | null>(null);
+  const [manualId, setManualId] = useState("");
+  const [scanKey, setScanKey] = useState(0);
+  const [scanError, setScanError] = useState<string | null>(null);
   const borrow = useBorrow();
+  const confirmUnit = useConfirmBorrow();
   const toast = useToast();
 
-  const openSheet = (item: AvailabilityItem) => { setSelected(item); setDays(7); setResult(null); borrow.reset(); };
-  const closeSheet = () => { setSelected(null); setResult(null); };
+  const openSheet = (item: AvailabilityItem) => {
+    setSelected(item); setDays(7); setResult(null);
+    setConfirmedAsset(null); setManualId(""); setScanError(null);
+    borrow.reset(); confirmUnit.reset();
+  };
+  const closeSheet = () => { setSelected(null); setResult(null); setConfirmedAsset(null); };
+
+  const confirmAsset = (assetId: string) => {
+    if (!result) return;
+    confirmUnit.mutate({ session_id: result.session_id, asset_id: assetId }, {
+      onSuccess: (r) => setConfirmedAsset(r.asset_id),
+      onError: (e) => {
+        setScanError(e instanceof ApiError ? e.message : errorMessage(e));
+        setScanKey((k) => k + 1); // remount the scanner so they can rescan
+      },
+    });
+  };
+  const onDecoded = (text: string) => {
+    const assetId = parseAssetId(text);
+    if (!assetId) {
+      setScanError("That doesn't look like a Rack label — try again or type the ID.");
+      setScanKey((k) => k + 1);
+      return;
+    }
+    setScanError(null);
+    confirmAsset(assetId);
+  };
 
   const confirm = () => {
     if (!selected) return;
@@ -49,7 +82,9 @@ export function BrowseScreen() {
                   <p className="font-medium">{item.name}</p>
                   <Badge tone={item.available_units > 0 ? "green" : "gray"}>{item.available_units}/{item.total_units} available</Badge>
                 </div>
-                <Button disabled={item.available_units === 0} onClick={() => openSheet(item)}>Borrow</Button>
+                {item.available_units > 0
+                  ? <Button onClick={() => openSheet(item)}>Borrow</Button>
+                  : <Button variant="secondary" onClick={() => openSheet(item)}>Options</Button>}
               </li>
             ))}
           </ul>
@@ -57,11 +92,39 @@ export function BrowseScreen() {
       ))}
 
       <Sheet open={selected !== null} onClose={closeSheet}>
-        {result ? (
+        {result && confirmedAsset ? (
           <div className="text-center">
-            <h3 className="mb-1 text-lg font-semibold">{borrowResultMessage(result).title}</h3>
-            <p className="mb-5 text-sm text-gray-600">{borrowResultMessage(result).body}</p>
+            <h3 className="mb-1 text-lg font-semibold">All set</h3>
+            <p className="mb-5 text-sm text-gray-600">
+              <span className="font-mono">{confirmedAsset}</span> is checked out to you. Close the door when you're done.
+            </p>
             <Button className="w-full" onClick={closeSheet}>Done</Button>
+          </div>
+        ) : result ? (
+          <div>
+            <h3 className="mb-1 text-lg font-semibold">{borrowResultMessage(result).title}</h3>
+            <p className="mb-3 text-sm text-gray-600">
+              Take your item, then scan the QR label on it to confirm which one you took.
+            </p>
+            <QrScanner key={scanKey} onScan={onDecoded} />
+            <div className="mt-3 flex gap-2">
+              <Input placeholder="…or type the asset ID" value={manualId}
+                onChange={(e) => setManualId(e.target.value)} />
+              <Button variant="secondary" disabled={!parseAssetId(manualId) || confirmUnit.isPending}
+                onClick={() => confirmAsset(parseAssetId(manualId)!)}>
+                {confirmUnit.isPending ? "…" : "Confirm"}
+              </Button>
+            </div>
+            {scanError && <p className="mt-2 text-sm text-red-600">{scanError}</p>}
+            <button className="mt-4 w-full text-center text-xs text-gray-400 underline" onClick={closeSheet}>
+              Can't scan right now? Confirm later from My Items — borrowing is paused until you do
+            </button>
+          </div>
+        ) : selected && selected.available_units === 0 ? (
+          <div>
+            <h3 className="mb-1 text-lg font-semibold">{selected.name} is unavailable</h3>
+            <p className="mb-4 text-sm text-gray-500">All units are out. You can:</p>
+            <RequestOptions itemTypeId={selected.item_type_id} itemName={selected.name} />
           </div>
         ) : selected ? (
           <div>

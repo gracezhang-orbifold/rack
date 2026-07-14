@@ -9,7 +9,10 @@ export function borrowResultMessage(r: { unlock: "ok" | "skipped" }): { title: s
 
 export function errorMessage(e: unknown): string {
   if (e instanceof ApiError) {
-    if (e.status === 409) return "Someone just took the last one — refreshing the list.";
+    // Only the stock-race 409s get the friendly copy — other conflicts
+    // (unconfirmed checkout, label mismatch) carry their own message.
+    if (e.status === 409 && /available/.test(e.message))
+      return "Someone just took the last one — refreshing the list.";
     return e.message;
   }
   return "Can't reach Rack — check your connection.";
