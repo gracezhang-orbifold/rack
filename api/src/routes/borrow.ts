@@ -102,11 +102,26 @@ export async function borrowRoutes(app: FastifyInstance) {
         const status = /no units available|not available/.test(e.message) ? 409 : 400;
         return reply.code(status).send({ error: e.message.replace(/^.*?: /, "") });
       }
+      // Surface the previous borrower's return report on this exact unit —
+      // e.g. "important contents, don't wipe" — before the user opens the door.
+      const { rows: [prev] } = await query(`
+        select s.return_answers, s.return_flagged, s.return_damaged, s.return_note,
+               s.returned_at, t.return_questions
+        from borrow_sessions s
+        join item_units u on u.id = s.item_unit_id
+        join item_types t on t.id = u.item_type_id
+        where s.item_unit_id = $1 and s.status = 'returned'
+        order by s.returned_at desc limit 1`, [session.item_unit_id]);
+      const prevAnswers = prev ? renderAnswers(prev.return_questions, prev.return_answers) : [];
+      const last_return = prev && (prev.return_flagged || prev.return_damaged || prevAnswers.length)
+        ? { flagged: prev.return_flagged, damaged: prev.return_damaged, note: prev.return_note,
+            returned_at: prev.returned_at, answers: prevAnswers }
+        : null;
       const lock = await lockForUnit(session.item_unit_id);
       if (!lock) {
         await logEvent({ session_id: session.session_id, user_id: req.user!.id,
           type: "unlock_requested", detail: { skipped: true, reason: "no active Seam lock configured for cabinet" } });
-        return { ...session, unlock: "skipped" };
+        return { ...session, unlock: "skipped", last_return };
       }
       await logEvent({ lock_id: lock.id, session_id: session.session_id,
         user_id: req.user!.id, type: "unlock_requested" });
@@ -118,7 +133,7 @@ export async function borrowRoutes(app: FastifyInstance) {
         await query(`select cancel_borrow_session($1)`, [session.session_id]);
         return reply.code(502).send({ error: "cabinet did not unlock — item not checked out, please retry" });
       }
-      return { ...session, unlock: "ok" };
+      return { ...session, unlock: "ok", last_return };
     });
 
   // After unlocking, the borrower scans the label on the item they took;
