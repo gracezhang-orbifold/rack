@@ -126,5 +126,10 @@ check "null clears link" "" "$(curl -sb "$AJ" -X PATCH "$API/api/admin/item-type
 # re-link for the tasks below
 curl -sb "$AJ" -X PATCH "$API/api/admin/item-types/$CAM" -H 'Content-Type: application/json' -d "{\"accessory_type_id\":\"$KIT\"}" >/dev/null
 
+curl -sb "$AJ" "$API/api/admin/item-units" -H 'Content-Type: application/json' -d "{\"item_type_id\":\"$CAM\",\"count\":2}" >/dev/null
+curl -sb "$AJ" "$API/api/admin/item-units" -H 'Content-Type: application/json' -d "{\"item_type_id\":\"$KIT\"}" >/dev/null
+check "availability carries accessory" "1" "$(curl -sb "$UJ" "$API/api/availability" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{const t=JSON.parse(d).find(x=>x.name==="Smoke Cam");console.log(t?.accessory?t.accessory.available_units:"")})')"
+check "unlinked type has null accessory" "yes" "$(curl -sb "$UJ" "$API/api/availability" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{const t=JSON.parse(d).find(x=>x.name==="Smoke Cam Kit");console.log(t&&t.accessory===null?"yes":"no")})')"
+
 echo; echo "== Results: $PASS passed, $FAIL failed"
 exit $([ "$FAIL" -eq 0 ] && echo 0 || echo 1)

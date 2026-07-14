@@ -5,10 +5,16 @@ import { requireUser } from "../auth.js";
 export async function catalogRoutes(app: FastifyInstance) {
   app.get("/api/availability", { preHandler: requireUser }, async () => {
     const { rows } = await query(`
-      select item_type_id, name, category, notes,
-             total_units::int, available_units::int, in_use_units::int,
-             needs_repair_units::int, missing_units::int, asset_ids
-      from item_availability order by category, name`);
+      select a.item_type_id, a.name, a.category, a.notes,
+             a.total_units::int, a.available_units::int, a.in_use_units::int,
+             a.needs_repair_units::int, a.missing_units::int, a.asset_ids,
+             case when t.accessory_type_id is null then null else json_build_object(
+               'item_type_id', acc.item_type_id, 'name', acc.name,
+               'available_units', acc.available_units::int) end as accessory
+      from item_availability a
+      join item_types t on t.id = a.item_type_id
+      left join item_availability acc on acc.item_type_id = t.accessory_type_id
+      order by a.category, a.name`);
     return rows;
   });
 
@@ -16,8 +22,13 @@ export async function catalogRoutes(app: FastifyInstance) {
   app.get<{ Params: { assetId: string } }>(
     "/api/units/by-asset/:assetId", { preHandler: requireUser }, async (req, reply) => {
       const { rows } = await query(`
-        select u.id as unit_id, u.asset_id, u.status, t.id as item_type_id, t.name, t.category
-        from item_units u join item_types t on t.id = u.item_type_id
+        select u.id as unit_id, u.asset_id, u.status, t.id as item_type_id, t.name, t.category,
+               case when t.accessory_type_id is null then null else json_build_object(
+                 'item_type_id', acc.item_type_id, 'name', acc.name,
+                 'available_units', acc.available_units::int) end as accessory
+        from item_units u
+        join item_types t on t.id = u.item_type_id
+        left join item_availability acc on acc.item_type_id = t.accessory_type_id
         where u.asset_id = $1 and u.status <> 'retired'`, [req.params.assetId]);
       if (!rows[0]) return reply.code(404).send({ error: "no item with this asset id" });
       return rows[0];
