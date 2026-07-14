@@ -113,6 +113,7 @@ export function AdminInventoryScreen() {
   const createType = useCreateItemType();
   const createUnits = useCreateUnits();
   const updateUnit = useUpdateUnit();
+  const updateItemType = useUpdateItemType();
   const toast = useToast();
   const [newName, setNewName] = useState("");
   const [newCategory, setNewCategory] = useState("");
@@ -151,6 +152,12 @@ export function AdminInventoryScreen() {
 
   const setStatus = (id: string, status: string) =>
     updateUnit.mutate({ id, body: { status } }, {
+      onError: (err) => toast(errorMessage(err), "error"),
+    });
+
+  const setAccessory = (id: string, accessory_type_id: string | null) =>
+    updateItemType.mutate({ id, body: { accessory_type_id } }, {
+      onSuccess: () => toast("Accessory kit updated."),
       onError: (err) => toast(errorMessage(err), "error"),
     });
 
@@ -205,6 +212,17 @@ export function AdminInventoryScreen() {
               Return questions ({t.return_questions.length})
             </button>
             {editQuestions === t.id && <ReturnQuestionsEditor type={t} />}
+            <label className="mb-2 flex items-center justify-between text-xs text-gray-500">
+              Accessory kit
+              <select className="rounded-lg border border-gray-300 px-2 py-1 text-sm"
+                value={t.accessory_type_id ?? ""} disabled={updateItemType.isPending}
+                onChange={(e) => setAccessory(t.id, e.target.value || null)}>
+                <option value="">None</option>
+                {inventory.data!.filter((o) => o.id !== t.id).map((o) => (
+                  <option key={o.id} value={o.id}>{o.name}</option>
+                ))}
+              </select>
+            </label>
             <ul className="flex flex-col gap-1">
               {t.units.map((u) => (
                 <li key={u.id} className="text-sm">
