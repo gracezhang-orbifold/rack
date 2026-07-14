@@ -16,8 +16,8 @@ function QrSvg({ value }: { value: string }) {
       .catch(() => { if (alive) setSrc(""); });
     return () => { alive = false; };
   }, [value]);
-  if (!src) return <div className="h-10 w-10" />;
-  return <img src={src} alt={`QR code for ${value}`} className="h-10 w-10" />;
+  if (!src) return <div className="h-11 w-11" />; // reserve space while the SVG renders
+  return <img src={src} alt={`QR code for ${value}`} className="h-11 w-11" />;
 }
 
 // Printable QR labels, one per unit with an asset id. The QR encodes just the
@@ -119,9 +119,9 @@ export function AdminLabelsScreen() {
             const off = deselected.has(u.asset_id);
             return (
               <li key={u.asset_id} onClick={() => toggle(u.asset_id)} aria-selected={!off}
-                className={`flex w-[60px] cursor-pointer break-inside-avoid flex-col items-center gap-0.5 border border-dashed p-1 text-center print:w-auto ${off ? "border-gray-200 opacity-40 print:hidden" : "border-gray-400"}`}>
+                className={`flex w-[60px] cursor-pointer break-inside-avoid flex-col items-center gap-0.5 border border-dashed p-0.5 text-center print:w-auto ${off ? "border-gray-200 opacity-40 print:hidden" : "border-gray-400"}`}>
                 <QrSvg value={u.asset_id} />
-                <p className="font-mono text-[10px] font-bold leading-none">{u.asset_id}</p>
+                <p className="whitespace-nowrap font-mono text-[9px] font-bold leading-none">{u.asset_id}</p>
                 <p className="text-[9px] leading-tight text-gray-600">{u.name}</p>
               </li>
             );
