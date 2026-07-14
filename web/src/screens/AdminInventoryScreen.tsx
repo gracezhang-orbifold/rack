@@ -48,7 +48,7 @@ function ReturnQuestionsEditor({ type }: { type: AdminItemType }) {
   const add = () => {
     if (!label.trim()) return;
     setDraft([...draft, {
-      id: crypto.randomUUID().slice(0, 8), label: label.trim(), kind,
+      id: (crypto.randomUUID?.() ?? Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)).slice(0, 8), label: label.trim(), kind,
       ...(kind === "yes_no" && flag ? { flag_if_yes: true as const } : {}),
     }]);
     setLabel(""); setKind("text"); setFlag(false);
