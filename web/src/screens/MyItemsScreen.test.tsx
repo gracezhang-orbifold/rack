@@ -86,3 +86,40 @@ it("requires the label scan to return a labeled unit", async () => {
     session_id: "s1", asset_id: "RACK-0044",
   });
 });
+
+it("asks return questions and blocks until every yes/no is answered", async () => {
+  const withQuestions = {
+    ...DATA,
+    active: [{ ...DATA.active[0], is_overdue: false, return_questions: [
+      { id: "q1", label: "What's on the card?", kind: "text" },
+      { id: "q2", label: "Important — must not be wiped?", kind: "yes_no", flag_if_yes: true },
+    ] }],
+  };
+  const f = vi.fn().mockImplementation(async (url: RequestInfo | URL) => {
+    const path = String(url);
+    if (path.endsWith("/api/return"))
+      return { ok: true, status: 200, json: async () => ({ session_id: "s1", status: "returned", damaged: false, flagged: true }) };
+    if (path.endsWith("/api/my-borrows")) return { ok: true, status: 200, json: async () => withQuestions };
+    return { ok: true, status: 200, json: async () => [] };
+  });
+  vi.stubGlobal("fetch", f);
+  wrap();
+
+  await userEvent.click(await screen.findByRole("button", { name: /more options/i }));
+  await userEvent.click(await screen.findByRole("button", { name: "Return" }));
+  expect(await screen.findByText("What's on the card?")).toBeInTheDocument();
+
+  const confirm = screen.getByRole("button", { name: /confirm & unlock/i });
+  expect(confirm).toBeDisabled(); // q2 unanswered
+
+  await userEvent.type(screen.getByLabelText(/what's on the card/i), "beach shoot raws");
+  await userEvent.click(screen.getByRole("button", { name: "Yes" }));
+  expect(confirm).toBeEnabled();
+  await userEvent.click(confirm);
+
+  expect(await screen.findByText("Cabinet unlocked")).toBeInTheDocument();
+  const call = f.mock.calls.find(([u]) => String(u).endsWith("/api/return"));
+  expect(JSON.parse((call![1] as RequestInit).body as string)).toEqual({
+    session_id: "s1", answers: { q1: "beach shoot raws", q2: true },
+  });
+});
