@@ -8,7 +8,7 @@ import { QrScanner } from "../components/QrScanner";
 import { errorMessage } from "../lib/borrowResult";
 import { parseAssetId } from "../lib/scan";
 import { ApiError } from "../lib/api";
-import type { ActiveBorrow, ItemRequest } from "../lib/types";
+import type { ActiveBorrow, ItemRequest, ReturnAnswers } from "../lib/types";
 
 const EXTEND_PRESETS = [1, 3, 7, 14];
 
@@ -79,19 +79,59 @@ export function MyItemsScreen() {
   const [scanError, setScanError] = useState<string | null>(null);
   const [damaged, setDamaged] = useState(false);
   const [note, setNote] = useState("");
+  const [answers, setAnswers] = useState<ReturnAnswers>({});
 
   const open = (kind: "menu" | "return" | "extend" | "confirm", b: ActiveBorrow) => {
     setSheet({ kind, b }); setDone(false); setDays(7);
     setManualId(""); setScanError(null);
-    setDamaged(false); setNote("");
+    setDamaged(false); setNote(""); setAnswers({});
     ret.reset(); extend.reset(); confirmUnit.reset();
   };
   const close = () => { setSheet(null); setDone(false); };
 
   const conditionIncomplete = damaged && !note.trim();
+
+  const questions = sheet?.b.return_questions ?? [];
+  const setAnswer = (id: string, v: string | boolean) => setAnswers((a) => ({ ...a, [id]: v }));
+  const questionsIncomplete = questions.some((q) => q.kind === "yes_no" && typeof answers[q.id] !== "boolean");
+  const returnIncomplete = conditionIncomplete || questionsIncomplete;
+
+  const questionFields = questions.length > 0 && (
+    <div className="mb-3 flex flex-col gap-3">
+      {questions.map((q) =>
+        q.kind === "yes_no" ? (
+          <div key={q.id}>
+            <p className="mb-1 text-sm text-gray-700">{q.label}</p>
+            <div className="flex gap-2">
+              {[true, false].map((v) => (
+                <button key={String(v)} type="button" onClick={() => setAnswer(q.id, v)}
+                  className={`min-h-[44px] flex-1 rounded-xl border ${answers[q.id] === v ? "border-gray-900 bg-gray-900 text-white" : "border-gray-300"}`}>
+                  {v ? "Yes" : "No"}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <label key={q.id} className="text-sm text-gray-700">
+            {q.label}
+            <textarea rows={2} maxLength={500} value={(answers[q.id] as string) ?? ""}
+              onChange={(e) => setAnswer(q.id, e.target.value)}
+              className="mt-1 w-full rounded-xl border border-gray-300 p-3 text-sm focus:border-gray-900 focus:outline-none" />
+          </label>
+        ))}
+    </div>
+  );
+
   const doReturn = (asset_id?: string) => {
     if (!sheet) return;
-    ret.mutate({ session_id: sheet.b.session_id, asset_id, damaged, note: note.trim() || undefined }, {
+    const cleanAnswers = Object.fromEntries(
+      Object.entries(answers)
+        .map(([k, v]) => [k, typeof v === "string" ? v.trim() : v] as const)
+        .filter(([, v]) => v !== ""));
+    ret.mutate({
+      session_id: sheet.b.session_id, asset_id, damaged, note: note.trim() || undefined,
+      answers: Object.keys(cleanAnswers).length ? cleanAnswers : undefined,
+    }, {
       onSuccess: () => setDone(true),
       onError: (e) => {
         const msg = e instanceof ApiError ? e.message : errorMessage(e);
@@ -111,8 +151,8 @@ export function MyItemsScreen() {
     });
   };
   const onDecoded = (text: string) => {
-    if (sheet?.kind === "return" && conditionIncomplete) {
-      setScanError("Describe the damage first, then scan again.");
+    if (sheet?.kind === "return" && returnIncomplete) {
+      setScanError("Answer the return questions first, then scan again.");
       setScanKey((k) => k + 1);
       return;
     }
@@ -225,7 +265,9 @@ export function MyItemsScreen() {
             <p className="mb-5 text-sm text-gray-600">
               {damaged
                 ? "Put the item back and close the door — the admins have been notified and the unit is marked for repair."
-                : "Put the item back and close the door."}
+                : ret.data?.flagged
+                  ? "Put the item back and close the door — your notes were sent to the admins."
+                  : "Put the item back and close the door."}
             </p>
             <Button className="w-full" onClick={close}>Done</Button>
           </div>
@@ -286,13 +328,14 @@ export function MyItemsScreen() {
               Scan the label on the item (<span className="font-mono">{sheet.b.asset_id}</span>) to confirm,
               then the cabinet will unlock.
             </p>
+            {questionFields}
             {conditionFields}
             <QrScanner key={scanKey} onScan={onDecoded} />
             <div className="mt-3 flex gap-2">
               <input className="min-h-[44px] w-full rounded-xl border border-gray-300 px-3 focus:border-gray-900 focus:outline-none"
                 placeholder="…or type the asset ID" value={manualId}
                 onChange={(e) => setManualId(e.target.value)} />
-              <Button variant="secondary" disabled={!parseAssetId(manualId) || conditionIncomplete || ret.isPending}
+              <Button variant="secondary" disabled={!parseAssetId(manualId) || returnIncomplete || ret.isPending}
                 onClick={() => doReturn(parseAssetId(manualId)!)}>
                 {ret.isPending ? "…" : "Confirm"}
               </Button>
@@ -303,9 +346,10 @@ export function MyItemsScreen() {
           <div>
             <h3 className="mb-1 text-lg font-semibold">Return {sheet.b.item_name}?</h3>
             <p className="mb-4 text-sm text-gray-500">The cabinet will unlock so you can put it back.</p>
+            {questionFields}
             {conditionFields}
             {ret.isError && <p className="mb-3 text-sm text-red-600">{errorMessage(ret.error)}</p>}
-            <Button className="w-full" disabled={ret.isPending || conditionIncomplete} onClick={() => doReturn()}>
+            <Button className="w-full" disabled={ret.isPending || returnIncomplete} onClick={() => doReturn()}>
               {ret.isPending ? "Unlocking…" : "Confirm & unlock"}
             </Button>
           </div>
