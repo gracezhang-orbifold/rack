@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { useAdminBorrows, useAdminReturn } from "../hooks/queries";
+import { useAdminBorrows, useAdminReturn, useAdminAttention, useResolveAttention } from "../hooks/queries";
 import { Badge, Button, Spinner, useToast } from "../components/ui";
 import { errorMessage } from "../lib/borrowResult";
 
@@ -8,6 +8,8 @@ function fmt(d: string) { return new Date(d).toLocaleDateString("en-US", { dateS
 export function AdminOverviewScreen() {
   const borrows = useAdminBorrows();
   const ret = useAdminReturn();
+  const attention = useAdminAttention();
+  const resolve = useResolveAttention();
   const toast = useToast();
 
   if (borrows.isLoading) return <Spinner />;
@@ -22,6 +24,46 @@ export function AdminOverviewScreen() {
 
   return (
     <div className="py-3">
+      {(attention.data?.length ?? 0) > 0 && (
+        <section className="mb-5">
+          <h2 className="mb-2 text-lg font-semibold">Needs attention ({attention.data!.length})</h2>
+          <ul className="flex flex-col gap-2">
+            {attention.data!.map((a) => (
+              <li key={a.session_id} className="rounded-xl bg-white p-3 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <p className="font-medium">
+                    {a.item_name}
+                    {a.asset_id ? <span className="font-mono text-xs text-gray-400"> · {a.asset_id}</span> : null}
+                  </p>
+                  <div className="flex gap-1">
+                    {a.return_flagged && <Badge tone="amber">Flagged</Badge>}
+                    {a.return_damaged && <Badge tone="red">Damaged</Badge>}
+                  </div>
+                </div>
+                <p className="text-xs text-gray-500">Returned by {a.full_name ?? a.email} · {fmt(a.returned_at)}</p>
+                {a.answers.map((p, i) => (
+                  <p key={i} className="text-sm text-gray-700">
+                    {p.label} <strong>{p.value === true ? "yes" : p.value === false ? "no" : p.value}</strong>
+                  </p>
+                ))}
+                {a.return_note && <p className="text-sm text-red-600">Damage: {a.return_note}</p>}
+                <div className="mt-2 flex items-center justify-between">
+                  {a.return_damaged
+                    ? <Link to="/admin/inventory" className="text-xs text-gray-500 underline">Unit is in repair — manage in inventory</Link>
+                    : <span />}
+                  <Button variant="secondary" disabled={resolve.isPending}
+                    onClick={() => resolve.mutate(a.session_id, {
+                      onSuccess: () => toast("Resolved."),
+                      onError: (e) => toast(errorMessage(e), "error"),
+                    })}>
+                    Resolve
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-lg font-semibold">Checked out</h2>
         <Link to="/admin/inventory" className="text-sm text-gray-500 underline">Inventory</Link>
