@@ -131,5 +131,21 @@ curl -sb "$AJ" "$API/api/admin/item-units" -H 'Content-Type: application/json' -
 check "availability carries accessory" "1" "$(curl -sb "$UJ" "$API/api/availability" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{const t=JSON.parse(d).find(x=>x.name==="Smoke Cam");console.log(t?.accessory?t.accessory.available_units:"")})')"
 check "unlinked type has null accessory" "yes" "$(curl -sb "$UJ" "$API/api/availability" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{const t=JSON.parse(d).find(x=>x.name==="Smoke Cam Kit");console.log(t&&t.accessory===null?"yes":"no")})')"
 
+B7=$(curl -sb "$UJ" "$API/api/borrow" -H 'Content-Type: application/json' -d "{\"item_type_id\":\"$CAM\",\"with_accessory\":true}")
+S7=$(echo "$B7" | jqv session_id); K7=$(echo "$B7" | jqv accessory.session_id)
+check "camera session created" "yes" "$([ -n "$S7" ] && echo yes || echo no)"
+check "kit session created" "yes" "$([ -n "$K7" ] && echo yes || echo no)"
+check "kit shares the due date" "yes" "$([ "$(echo "$B7" | jqv due_at)" = "$(echo "$B7" | jqv accessory.due_at)" ] && echo yes || echo no)"
+B8=$(curl -sb "$UJ" "$API/api/borrow" -H 'Content-Type: application/json' -d "{\"item_type_id\":\"$CAM\",\"with_accessory\":true}")
+check "camera ok when kits exhausted" "yes" "$([ -n "$(echo "$B8" | jqv session_id)" ] && echo yes || echo no)"
+check "kit exhaustion reported" "no kits available — camera only" "$(echo "$B8" | jqv accessory.error)"
+for S in $S7 $K7 $(echo "$B8" | jqv session_id); do
+  curl -sb "$UJ" "$API/api/return" -H 'Content-Type: application/json' -d "{\"session_id\":\"$S\"}" >/dev/null
+done
+B9=$(curl -sb "$UJ" "$API/api/borrow" -H 'Content-Type: application/json' -d "{\"item_type_id\":\"$KIT\"}")
+S9=$(echo "$B9" | jqv session_id)
+check "kit borrows alone, no companion field" "yes" "$([ -n "$S9" ] && [ -z "$(echo "$B9" | jqv accessory.session_id)" ] && echo yes || echo no)"
+curl -sb "$UJ" "$API/api/return" -H 'Content-Type: application/json' -d "{\"session_id\":\"$S9\"}" >/dev/null
+
 echo; echo "== Results: $PASS passed, $FAIL failed"
 exit $([ "$FAIL" -eq 0 ] && echo 0 || echo 1)

@@ -77,10 +77,12 @@ async function logEvent(e: { lock_id?: string; session_id: string; user_id: stri
 }
 
 export async function borrowRoutes(app: FastifyInstance) {
-  app.post<{ Body: { item_type_id?: string; days?: number; unit_id?: string } }>(
+  app.post<{ Body: { item_type_id?: string; days?: number; unit_id?: string; with_accessory?: boolean } }>(
     "/api/borrow", { preHandler: requireUser }, async (req, reply) => {
-      const { item_type_id, days, unit_id } = req.body ?? {};
+      const { item_type_id, days, unit_id, with_accessory } = req.body ?? {};
       if (!item_type_id) return reply.code(400).send({ error: "item_type_id is required" });
+      if (with_accessory !== undefined && typeof with_accessory !== "boolean")
+        return reply.code(400).send({ error: "with_accessory must be a boolean" });
       // A checkout whose label scan was skipped blocks further borrowing —
       // the database doesn't know which physical unit the user actually has.
       const { rows: pending } = await query(`
@@ -112,6 +114,28 @@ export async function borrowRoutes(app: FastifyInstance) {
         const status = /no units available|not available/.test(e.message) ? 409 : 400;
         return reply.code(status).send({ error: e.message.replace(/^.*?: /, "") });
       }
+      // Companion kit: claim a unit of the type's linked accessory type in
+      // the same request — a second client call would trip the unconfirmed-
+      // checkout guard above. The kit's own link, if any, is never chained.
+      let accessory: { session_id: string; item_unit_id: string; due_at: string } | { error: string } | null = null;
+      if (with_accessory === true) {
+        const { rows: [t] } = await query(
+          `select accessory_type_id from item_types where id = $1`, [item_type_id]);
+        if (t?.accessory_type_id) {
+          try {
+            const { rows: [kit] } = await query(`select * from borrow_unit($1, $2, $3, $4)`,
+              [req.user!.id, t.accessory_type_id, days ?? 7, null]);
+            // Lock the kit's due date to the camera's — borrow_unit's own
+            // now() would otherwise drift a few ms between the two calls.
+            await query(`update borrow_sessions set due_at = $1 where id = $2`,
+              [session.due_at, kit.session_id]);
+            accessory = { session_id: kit.session_id, item_unit_id: kit.item_unit_id, due_at: session.due_at };
+          } catch {
+            // Kit pool raced to empty — the camera checkout stands.
+            accessory = { error: "no kits available — camera only" };
+          }
+        }
+      }
       // Surface the previous borrower's return report on this exact unit —
       // e.g. "important contents, don't wipe" — before the user opens the door.
       const { rows: [prev] } = await query(`
@@ -131,7 +155,7 @@ export async function borrowRoutes(app: FastifyInstance) {
       if (!lock) {
         await logEvent({ session_id: session.session_id, user_id: req.user!.id,
           type: "unlock_requested", detail: { skipped: true, reason: "no active Seam lock configured for cabinet" } });
-        return { ...session, unlock: "skipped", last_return };
+        return { ...session, unlock: "skipped", last_return, accessory };
       }
       await logEvent({ lock_id: lock.id, session_id: session.session_id,
         user_id: req.user!.id, type: "unlock_requested" });
@@ -141,9 +165,11 @@ export async function borrowRoutes(app: FastifyInstance) {
         attemptId: unlock.actionAttemptId, detail: unlock.ok ? {} : { error: unlock.error } });
       if (!unlock.ok) {
         await query(`select cancel_borrow_session($1)`, [session.session_id]);
+        if (accessory && "session_id" in accessory)
+          await query(`select cancel_borrow_session($1)`, [accessory.session_id]);
         return reply.code(502).send({ error: "cabinet did not unlock — item not checked out, please retry" });
       }
-      return { ...session, unlock: "ok", last_return };
+      return { ...session, unlock: "ok", last_return, accessory };
     });
 
   // After unlocking, the borrower scans the label on the item they took;
