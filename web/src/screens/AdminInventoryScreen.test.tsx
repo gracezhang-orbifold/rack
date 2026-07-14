@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
@@ -7,10 +7,10 @@ import { AdminInventoryScreen } from "./AdminInventoryScreen";
 import { ToastProvider } from "../components/ui";
 
 const INVENTORY = [
-  { id: "t1", name: "GoPro 13 Black", category: "Camera", notes: null, units: [
+  { id: "t1", name: "GoPro 13 Black", category: "Camera", notes: null, return_questions: [], units: [
     { id: "u1", asset_id: "RACK-0044", status: "available", owner: null, notes: null, created_at: "2026-07-01T00:00:00Z" },
   ] },
-  { id: "t2", name: "Manus Gloves", category: "Tracking", notes: null, units: [] },
+  { id: "t2", name: "Manus Gloves", category: "Tracking", notes: null, return_questions: [], units: [] },
 ];
 
 function wrap() {
@@ -54,5 +54,39 @@ describe("AdminInventoryScreen", () => {
     await screen.findByText("GoPro 13 Black");
     const options = [...document.querySelectorAll("#category-options option")].map((o) => o.getAttribute("value"));
     expect(options).toEqual(["Camera", "Tracking"]);
+  });
+
+  it("adds a return question and saves it on the type", async () => {
+    const f = vi.fn().mockImplementation(async (url: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(url);
+      if (path.endsWith("/api/admin/item-types/t1") && init?.method === "PATCH")
+        return { ok: true, status: 200, json: async () => ({ ...INVENTORY[0] }) };
+      if (path.endsWith("/api/admin/item-types")) return { ok: true, status: 200, json: async () => INVENTORY };
+      return { ok: true, status: 200, json: async () => [] };
+    });
+    vi.stubGlobal("fetch", f);
+    wrap();
+
+    const goProName = await screen.findByText("GoPro 13 Black");
+    const goProCard = goProName.closest("li")!;
+    await userEvent.click(within(goProCard).getByRole("button", { name: /return questions \(0\)/i }));
+    await userEvent.type(screen.getByPlaceholderText(/question label/i), "Important — must not be wiped?");
+    await userEvent.selectOptions(screen.getByLabelText(/answer type/i), "yes_no");
+    await userEvent.click(screen.getByLabelText(/flag for attention if yes/i));
+    await userEvent.click(screen.getByRole("button", { name: "Add question" }));
+    expect(screen.getByText("Important — must not be wiped?")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Save questions" }));
+
+    await waitFor(() => {
+      const call = f.mock.calls.find(([u, i]) => String(u).endsWith("/api/admin/item-types/t1") && (i as RequestInit)?.method === "PATCH");
+      expect(call).toBeTruthy();
+      const body = JSON.parse((call![1] as RequestInit).body as string);
+      expect(body.return_questions).toHaveLength(1);
+      expect(body.return_questions[0]).toMatchObject({
+        label: "Important — must not be wiped?", kind: "yes_no", flag_if_yes: true,
+      });
+      expect(typeof body.return_questions[0].id).toBe("string");
+      expect(body.return_questions[0].id.length).toBeGreaterThan(0);
+    });
   });
 });
