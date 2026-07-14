@@ -90,5 +90,13 @@ check "return reports flagged" "true" "$(echo "$RET4" | jqv flagged)"
 check "flagged unit stays available" "available" "$(sql "select u.status from item_units u join borrow_sessions s on s.item_unit_id = u.id where s.id = '$S4';")"
 check "answers stored" "true" "$(sql "select (return_answers->>'q_keep') from borrow_sessions where id = '$S4';")"
 
+ATT=$(curl -sb "$AJ" "$API/api/admin/attention")
+check "attention queue has 1" "1" "$(echo "$ATT" | jqv '')"
+check "attention row is flagged" "true" "$(echo "$ATT" | jqv 0.return_flagged)"
+check "attention answers rendered" "2" "$(echo "$ATT" | jqv 0.answers)"
+check "resolve succeeds" "true" "$(curl -sb "$AJ" -X POST "$API/api/admin/attention/$S4/resolve" | jqv resolved)"
+check "resolve again is 409" "409" "$(curl -s -o /dev/null -w '%{http_code}' -b "$AJ" -X POST "$API/api/admin/attention/$S4/resolve")"
+check "attention queue empty after resolve" "0" "$(curl -sb "$AJ" "$API/api/admin/attention" | jqv '')"
+
 echo; echo "== Results: $PASS passed, $FAIL failed"
 exit $([ "$FAIL" -eq 0 ] && echo 0 || echo 1)

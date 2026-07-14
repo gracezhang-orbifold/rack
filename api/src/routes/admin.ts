@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { query } from "../db.js";
 import { requireAdmin } from "../auth.js";
 import { processItemAvailability } from "../requests.js";
-import { validateQuestions } from "../questionnaire.js";
+import { validateQuestions, renderAnswers, type ReturnQuestion, type ReturnAnswers } from "../questionnaire.js";
 
 export async function adminRoutes(app: FastifyInstance) {
   app.addHook("preHandler", requireAdmin);
@@ -34,6 +34,40 @@ export async function adminRoutes(app: FastifyInstance) {
       join item_units u on u.id = s.item_unit_id where s.id = $1`, [session_id]);
     if (unit) await processItemAvailability(unit.item_type_id);
     return { session_id, status: "returned" };
+  });
+
+  // Returns needing follow-up: flagged contents ("don't wipe") or damage.
+  // The queue is a query — resolution just stamps the session.
+  app.get("/api/admin/attention", async () => {
+    const { rows } = await query(`
+      select s.id as session_id, t.name as item_name, u.asset_id, u.id as item_unit_id,
+             u.status as unit_status, p.email, p.full_name, s.returned_at,
+             s.return_flagged, s.return_damaged, s.return_note,
+             s.return_answers, t.return_questions
+      from borrow_sessions s
+      join item_units u on u.id = s.item_unit_id
+      join item_types t on t.id = u.item_type_id
+      join profiles p on p.id = s.user_id
+      where (s.return_flagged or s.return_damaged) and s.attention_resolved_at is null
+      order by s.returned_at desc`);
+    return rows.map(({ return_answers, return_questions, ...r }) => ({
+      ...r,
+      answers: renderAnswers(return_questions as ReturnQuestion[], return_answers as ReturnAnswers | null),
+    }));
+  });
+
+  app.post<{ Params: { id: string } }>("/api/admin/attention/:id/resolve", async (req, reply) => {
+    const { rows } = await query(`
+      update borrow_sessions
+      set attention_resolved_at = now(), attention_resolved_by = $2
+      where id = $1 and (return_flagged or return_damaged) and attention_resolved_at is null
+      returning id`, [req.params.id, req.user!.id]);
+    if (rows[0]) return { session_id: rows[0].id, resolved: true };
+    const open = await query(
+      `select 1 from borrow_sessions where id = $1 and (return_flagged or return_damaged)`,
+      [req.params.id]);
+    if (!open.rows[0]) return reply.code(404).send({ error: "not found" });
+    return reply.code(409).send({ error: "already resolved" });
   });
 
   // Who has (and had) this unit — current and previous borrowers with dates.
