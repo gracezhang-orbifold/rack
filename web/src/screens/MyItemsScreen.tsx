@@ -102,9 +102,10 @@ export function MyItemsScreen() {
         q.kind === "yes_no" ? (
           <div key={q.id}>
             <p className="mb-1 text-sm text-gray-700">{q.label}</p>
-            <div className="flex gap-2">
+            <div className="flex gap-2" role="group" aria-label={q.label}>
               {[true, false].map((v) => (
                 <button key={String(v)} type="button" onClick={() => setAnswer(q.id, v)}
+                  aria-pressed={answers[q.id] === v}
                   className={`min-h-[44px] flex-1 rounded-xl border ${answers[q.id] === v ? "border-gray-900 bg-gray-900 text-white" : "border-gray-300"}`}>
                   {v ? "Yes" : "No"}
                 </button>
