@@ -1,6 +1,7 @@
 import type {
   Me, AvailabilityItem, MyBorrows, BorrowResult, AdminBorrows, AdminItemType, AdminUnit,
   ScannedUnit, ItemRequest, RequestKind, UnitHistoryRow, ReminderSettings,
+  AttentionItem, ReturnAnswers, ReturnQuestion,
 } from "./types";
 
 export class ApiError extends Error {
@@ -41,11 +42,12 @@ export const api = {
   myBorrows: () => request<MyBorrows>("/my-borrows"),
   borrow: (item_type_id: string, days: number, unit_id?: string) =>
     request<BorrowResult>("/borrow", post({ item_type_id, days, ...(unit_id ? { unit_id } : {}) })),
-  returnItem: (v: { session_id: string; asset_id?: string; damaged?: boolean; note?: string }) =>
-    request<{ session_id: string; status: string; damaged: boolean }>("/return", post({
+  returnItem: (v: { session_id: string; asset_id?: string; damaged?: boolean; note?: string; answers?: ReturnAnswers }) =>
+    request<{ session_id: string; status: string; damaged: boolean; flagged: boolean }>("/return", post({
       session_id: v.session_id,
       ...(v.asset_id ? { asset_id: v.asset_id } : {}),
       ...(v.damaged ? { damaged: true, note: v.note } : {}),
+      ...(v.answers ? { answers: v.answers } : {}),
     })),
   extendBorrow: (session_id: string, days: number) =>
     request<{ session_id: string; due_at: string }>("/borrow/extend", post({ session_id, days })),
@@ -64,10 +66,13 @@ export const api = {
 
   adminBorrows: () => request<AdminBorrows>("/admin/borrows"),
   adminReturn: (session_id: string) => request<{ session_id: string; status: string }>("/admin/return", post({ session_id })),
+  adminAttention: () => request<AttentionItem[]>("/admin/attention"),
+  resolveAttention: (session_id: string) =>
+    request<{ session_id: string; resolved: true }>(`/admin/attention/${encodeURIComponent(session_id)}/resolve`, post()),
   adminItemTypes: () => request<AdminItemType[]>("/admin/item-types"),
-  createItemType: (body: { name: string; category: string; notes?: string }) =>
+  createItemType: (body: { name: string; category: string; notes?: string; return_questions?: ReturnQuestion[] }) =>
     request<AdminItemType>("/admin/item-types", post(body)),
-  updateItemType: (id: string, body: { name?: string; category?: string; notes?: string }) =>
+  updateItemType: (id: string, body: { name?: string; category?: string; notes?: string; return_questions?: ReturnQuestion[] }) =>
     request<AdminItemType>(`/admin/item-types/${id}`, patch(body)),
   createUnits: (body: { item_type_id: string; count?: number; asset_id?: string; notes?: string }) =>
     request<{ created: number }>("/admin/item-units", post(body)),

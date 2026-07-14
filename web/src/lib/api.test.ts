@@ -43,4 +43,23 @@ describe("api client", () => {
     expect(init.body).toBeUndefined();
     expect(Object.keys(init.headers ?? {})).not.toContain("Content-Type");
   });
+
+  it("returnItem sends answers and omits absent optionals", async () => {
+    const f = mockFetch(200, { session_id: "s1", status: "returned", damaged: false, flagged: true });
+    vi.stubGlobal("fetch", f);
+    await api.returnItem({ session_id: "s1", answers: { q1: "raw files", q2: true } });
+    const [url, init] = f.mock.calls[0];
+    expect(url).toBe("/api/return");
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({
+      session_id: "s1", answers: { q1: "raw files", q2: true },
+    });
+  });
+
+  it("resolveAttention posts to the session's resolve route", async () => {
+    const f = mockFetch(200, { session_id: "s9", resolved: true });
+    vi.stubGlobal("fetch", f);
+    await api.resolveAttention("s9");
+    expect(f.mock.calls[0][0]).toBe("/api/admin/attention/s9/resolve");
+    expect((f.mock.calls[0][1] as RequestInit).method).toBe("POST");
+  });
 });
