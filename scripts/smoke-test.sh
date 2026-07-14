@@ -113,5 +113,18 @@ check "warning carries answers" "2" "$(echo "$B5" | jqv last_return.answers)"
 S5=$(echo "$B5" | jqv session_id)
 check "admin return skips questionnaire" "returned" "$(curl -sb "$AJ" "$API/api/admin/return" -H 'Content-Type: application/json' -d "{\"session_id\":\"$S5\"}" | jqv status)"
 
+echo "== Accessory kits"
+CAM=$(curl -sb "$AJ" "$API/api/admin/item-types" -H 'Content-Type: application/json' \
+  -d '{"name":"Smoke Cam","category":"Camera"}' | jqv id)
+KIT=$(curl -sb "$AJ" "$API/api/admin/item-types" -H 'Content-Type: application/json' \
+  -d '{"name":"Smoke Cam Kit","category":"Camera"}' | jqv id)
+check "self-link rejected" "400" "$(curl -s -o /dev/null -w '%{http_code}' -b "$AJ" -X PATCH "$API/api/admin/item-types/$CAM" -H 'Content-Type: application/json' -d "{\"accessory_type_id\":\"$CAM\"}")"
+check "unknown accessory type rejected" "400" "$(curl -s -o /dev/null -w '%{http_code}' -b "$AJ" -X PATCH "$API/api/admin/item-types/$CAM" -H 'Content-Type: application/json' -d '{"accessory_type_id":"00000000-0000-0000-0000-000000000000"}')"
+check "link saved" "$KIT" "$(curl -sb "$AJ" -X PATCH "$API/api/admin/item-types/$CAM" -H 'Content-Type: application/json' -d "{\"accessory_type_id\":\"$KIT\"}" | jqv accessory_type_id)"
+check "omitted field leaves link alone" "$KIT" "$(curl -sb "$AJ" -X PATCH "$API/api/admin/item-types/$CAM" -H 'Content-Type: application/json' -d '{"notes":"smoke"}' | jqv accessory_type_id)"
+check "null clears link" "" "$(curl -sb "$AJ" -X PATCH "$API/api/admin/item-types/$CAM" -H 'Content-Type: application/json' -d '{"accessory_type_id":null}' | jqv accessory_type_id)"
+# re-link for the tasks below
+curl -sb "$AJ" -X PATCH "$API/api/admin/item-types/$CAM" -H 'Content-Type: application/json' -d "{\"accessory_type_id\":\"$KIT\"}" >/dev/null
+
 echo; echo "== Results: $PASS passed, $FAIL failed"
 exit $([ "$FAIL" -eq 0 ] && echo 0 || echo 1)
