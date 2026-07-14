@@ -147,5 +147,26 @@ S9=$(echo "$B9" | jqv session_id)
 check "kit borrows alone, no companion field" "yes" "$([ -n "$S9" ] && [ -z "$(echo "$B9" | jqv accessory.session_id)" ] && echo yes || echo no)"
 curl -sb "$UJ" "$API/api/return" -H 'Content-Type: application/json' -d "{\"session_id\":\"$S9\"}" >/dev/null
 
+echo "== Cleanup"
+# Delete every 'Smoke *' type this run created via the admin API, so the dev
+# DB (and the admin UI's dropdowns) don't accumulate test litter. Cascade by
+# hand — the FKs are NO ACTION: events -> sessions -> requests -> units ->
+# types, with accessory links to smoke types nulled first.
+sql "
+  delete from device_events where borrow_session_id in (
+    select s.id from borrow_sessions s
+    join item_units u on u.id = s.item_unit_id
+    where u.item_type_id in (select id from item_types where name like 'Smoke %'));
+  delete from borrow_sessions where item_unit_id in (
+    select id from item_units
+    where item_type_id in (select id from item_types where name like 'Smoke %'));
+  delete from item_requests where item_type_id in (select id from item_types where name like 'Smoke %');
+  delete from item_units where item_type_id in (select id from item_types where name like 'Smoke %');
+  update item_types set accessory_type_id = null
+    where accessory_type_id in (select id from item_types where name like 'Smoke %');
+  delete from item_types where name like 'Smoke %';
+" >/dev/null
+check "smoke artifacts cleaned up" "0" "$(sql "select count(*) from item_types where name like 'Smoke %';")"
+
 echo; echo "== Results: $PASS passed, $FAIL failed"
 exit $([ "$FAIL" -eq 0 ] && echo 0 || echo 1)
