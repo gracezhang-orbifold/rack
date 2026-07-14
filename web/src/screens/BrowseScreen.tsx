@@ -6,6 +6,7 @@ import { parseAssetId } from "../lib/scan";
 import { Badge, Button, Input, Sheet, Spinner, useToast } from "../components/ui";
 import { RequestOptions } from "../components/RequestOptions";
 import { QrScanner } from "../components/QrScanner";
+import { LastReturnNotice } from "../components/LastReturnNotice";
 import { ApiError } from "../lib/api";
 import type { AvailabilityItem, BorrowResult } from "../lib/types";
 
@@ -95,6 +96,7 @@ export function BrowseScreen() {
         {result && confirmedAsset ? (
           <div className="text-center">
             <h3 className="mb-1 text-lg font-semibold">All set</h3>
+            <LastReturnNotice lastReturn={result.last_return} />
             <p className="mb-5 text-sm text-gray-600">
               <span className="font-mono">{confirmedAsset}</span> is checked out to you. Close the door when you're done.
             </p>
@@ -103,6 +105,7 @@ export function BrowseScreen() {
         ) : result ? (
           <div>
             <h3 className="mb-1 text-lg font-semibold">{borrowResultMessage(result).title}</h3>
+            <LastReturnNotice lastReturn={result.last_return} />
             <p className="mb-3 text-sm text-gray-600">
               Take your item, then scan the QR label on it to confirm which one you took.
             </p>
