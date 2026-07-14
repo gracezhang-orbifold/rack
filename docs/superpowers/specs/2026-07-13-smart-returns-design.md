@@ -23,6 +23,9 @@ In scope:
 - **Damage reporting folded into the queue** — the existing damage flow
   (`return_damaged`/`return_note`, admin email, unit → `needs_repair`) gains a
   queue entry instead of being email-only.
+- **Overdue borrow block** (added 2026-07-14) — a user with any overdue
+  active loan cannot borrow anything until they return it or extend its
+  deadline. Requests (waitlist/notify/reserve) stay allowed.
 
 Out of scope: kit/accessory checklists.
 
@@ -95,6 +98,12 @@ behind the existing `requireAdmin` preHandler):
   borrow so the return sheet knows what to ask.
 - `POST /api/admin/return` is unchanged — admin force-return bypasses the
   questionnaire (no answers, never flagged).
+- `POST /api/borrow` — before claiming a unit, reject with 409 ("you have an
+  overdue item — return it or extend the deadline before borrowing again")
+  when the caller has any active session with `due_at < now()`, mirroring the
+  existing unconfirmed-checkout guard. Returning or extending clears the
+  block naturally (extend moves `due_at` forward). No client changes needed:
+  BrowseScreen toasts 409 messages and ScanScreen shows them inline.
 
 ## Frontend
 
