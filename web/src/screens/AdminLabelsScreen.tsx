@@ -113,12 +113,13 @@ export function AdminLabelsScreen() {
       {units.length === 0 ? (
         <p className="text-sm text-gray-500">No units have asset IDs yet.</p>
       ) : (
-        <ul className="flex flex-wrap gap-2 print:gap-1">
+        // Print is a fixed 12-per-row grid; on screen the labels just wrap.
+        <ul className="flex flex-wrap gap-2 print:grid print:grid-cols-12 print:gap-1">
           {units.map((u) => {
             const off = deselected.has(u.asset_id);
             return (
               <li key={u.asset_id} onClick={() => toggle(u.asset_id)} aria-selected={!off}
-                className={`flex w-[60px] cursor-pointer break-inside-avoid flex-col items-center gap-0.5 border border-dashed p-1 text-center ${off ? "border-gray-200 opacity-40 print:hidden" : "border-gray-400"}`}>
+                className={`flex w-[60px] cursor-pointer break-inside-avoid flex-col items-center gap-0.5 border border-dashed p-1 text-center print:w-auto ${off ? "border-gray-200 opacity-40 print:hidden" : "border-gray-400"}`}>
                 <QrSvg value={u.asset_id} />
                 <p className="font-mono text-[10px] font-bold leading-none">{u.asset_id}</p>
                 <p className="text-[9px] leading-tight text-gray-600">{u.name}</p>
