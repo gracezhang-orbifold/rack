@@ -28,9 +28,19 @@ describe("api client", () => {
   it("sends credentials and JSON content-type", async () => {
     const f = mockFetch(200, { ok: true });
     vi.stubGlobal("fetch", f);
-    await api.logout();
-    expect(f).toHaveBeenCalledWith("/api/auth/logout", expect.objectContaining({
+    await api.login("a@o.ai", "pw12345678");
+    expect(f).toHaveBeenCalledWith("/api/auth/login", expect.objectContaining({
       method: "POST", credentials: "include",
+      headers: expect.objectContaining({ "Content-Type": "application/json" }),
     }));
+  });
+
+  it("omits JSON content-type on bodyless requests (Fastify rejects empty JSON bodies)", async () => {
+    const f = mockFetch(200, { ok: true });
+    vi.stubGlobal("fetch", f);
+    await api.logout();
+    const [, init] = f.mock.calls[0];
+    expect(init.body).toBeUndefined();
+    expect(Object.keys(init.headers ?? {})).not.toContain("Content-Type");
   });
 });

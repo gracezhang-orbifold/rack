@@ -2,11 +2,12 @@ import { describe, it, expect } from "vitest";
 import { filterInventory, groupByCategory } from "./filter";
 import type { AvailabilityItem } from "./types";
 
-const mk = (name: string, category: string): AvailabilityItem => ({
+const mk = (name: string, category: string, asset_ids: string[] = []): AvailabilityItem => ({
   item_type_id: name, name, category, notes: null,
   total_units: 1, available_units: 1, in_use_units: 0, needs_repair_units: 0, missing_units: 0,
+  asset_ids,
 });
-const items = [mk("GoPro 13 Black", "Camera"), mk("Tripod", "Camera Accessories"), mk("Manus Gloves", "Tracking")];
+const items = [mk("GoPro 13 Black", "Camera", ["RACK-0001", "RACK-0002"]), mk("Tripod", "Camera Accessories"), mk("Manus Gloves", "Tracking", ["RACK-0017"])];
 
 describe("filterInventory", () => {
   it("returns all when query is blank", () => {
@@ -17,6 +18,15 @@ describe("filterInventory", () => {
   });
   it("matches on category", () => {
     expect(filterInventory(items, "tracking").map((i) => i.name)).toEqual(["Manus Gloves"]);
+  });
+  it("matches on asset id, case-insensitively", () => {
+    expect(filterInventory(items, "rack-0017").map((i) => i.name)).toEqual(["Manus Gloves"]);
+    expect(filterInventory(items, "RACK-000").map((i) => i.name)).toEqual(["GoPro 13 Black"]);
+  });
+  it("tolerates items without asset ids", () => {
+    const legacy = { ...mk("Old", "Misc"), asset_ids: undefined as unknown as string[] };
+    expect(filterInventory([legacy], "old")).toHaveLength(1);
+    expect(filterInventory([legacy], "rack")).toHaveLength(0);
   });
 });
 

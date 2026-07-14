@@ -41,4 +41,28 @@ export async function authRoutes(app: FastifyInstance) {
   });
 
   app.get("/api/me", { preHandler: requireUser }, async (req) => req.user);
+
+  app.get("/api/me/settings", { preHandler: requireUser }, async (req) => {
+    const { rows } = await query(
+      `select remind_before_days, overdue_reminder_every_days from profiles where id = $1`,
+      [req.user!.id]);
+    return rows[0];
+  });
+
+  app.patch<{ Body: { remind_before_days?: number; overdue_reminder_every_days?: number } }>(
+    "/api/me/settings", { preHandler: requireUser }, async (req, reply) => {
+      const { remind_before_days, overdue_reminder_every_days } = req.body ?? {};
+      const intIn = (v: unknown, max: number) => Number.isInteger(v) && (v as number) >= 0 && (v as number) <= max;
+      if (remind_before_days !== undefined && !intIn(remind_before_days, 14))
+        return reply.code(400).send({ error: "remind_before_days must be 0-14" });
+      if (overdue_reminder_every_days !== undefined && !intIn(overdue_reminder_every_days, 30))
+        return reply.code(400).send({ error: "overdue_reminder_every_days must be 0-30" });
+      const { rows } = await query(
+        `update profiles set
+           remind_before_days = coalesce($2, remind_before_days),
+           overdue_reminder_every_days = coalesce($3, overdue_reminder_every_days)
+         where id = $1 returning remind_before_days, overdue_reminder_every_days`,
+        [req.user!.id, remind_before_days ?? null, overdue_reminder_every_days ?? null]);
+      return rows[0];
+    });
 }

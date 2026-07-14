@@ -31,7 +31,7 @@ export function AdminOverviewScreen() {
         {active.map((b) => (
           <li key={b.session_id} className="flex items-center justify-between rounded-xl bg-white p-3 shadow-sm">
             <div>
-              <p className="font-medium">{b.item_name}</p>
+              <p className="font-medium">{b.item_name}{b.asset_id ? <span className="font-mono text-xs text-gray-400"> · {b.asset_id}</span> : null}</p>
               <p className="text-xs text-gray-500">{b.full_name ?? b.email} · {b.email}</p>
               {b.is_overdue ? <Badge tone="red">Overdue — due {fmt(b.due_at)}</Badge> : <span className="text-xs text-gray-500">Due {fmt(b.due_at)}</span>}
             </div>

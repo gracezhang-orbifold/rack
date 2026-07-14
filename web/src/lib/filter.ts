@@ -4,7 +4,8 @@ export function filterInventory(items: AvailabilityItem[], q: string): Availabil
   const term = q.trim().toLowerCase();
   if (!term) return items;
   return items.filter(
-    (i) => i.name.toLowerCase().includes(term) || i.category.toLowerCase().includes(term),
+    (i) => i.name.toLowerCase().includes(term) || i.category.toLowerCase().includes(term)
+      || (i.asset_ids ?? []).some((a) => a.toLowerCase().includes(term)),
   );
 }
 

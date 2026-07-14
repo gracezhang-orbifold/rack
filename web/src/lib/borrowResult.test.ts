@@ -15,6 +15,10 @@ describe("errorMessage", () => {
   it("409 → friendly race message", () => {
     expect(errorMessage(new ApiError(409, "no units available for this item type"))).toMatch(/someone just took/i);
   });
+  it("non-race 409s relay the server message", () => {
+    expect(errorMessage(new ApiError(409, "you have an unconfirmed checkout — scan the label on the item you took (My Items tab) before borrowing again")))
+      .toMatch(/unconfirmed checkout/);
+  });
   it("502 → relays server message", () => {
     expect(errorMessage(new ApiError(502, "cabinet did not unlock — item not checked out, please retry")))
       .toMatch(/did not unlock/);

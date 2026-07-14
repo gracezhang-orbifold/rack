@@ -7,17 +7,29 @@ export async function catalogRoutes(app: FastifyInstance) {
     const { rows } = await query(`
       select item_type_id, name, category, notes,
              total_units::int, available_units::int, in_use_units::int,
-             needs_repair_units::int, missing_units::int
+             needs_repair_units::int, missing_units::int, asset_ids
       from item_availability order by category, name`);
     return rows;
   });
 
+  // Resolve a printed QR label (asset id) to its unit + item type.
+  app.get<{ Params: { assetId: string } }>(
+    "/api/units/by-asset/:assetId", { preHandler: requireUser }, async (req, reply) => {
+      const { rows } = await query(`
+        select u.id as unit_id, u.asset_id, u.status, t.id as item_type_id, t.name, t.category
+        from item_units u join item_types t on t.id = u.item_type_id
+        where u.asset_id = $1 and u.status <> 'retired'`, [req.params.assetId]);
+      if (!rows[0]) return reply.code(404).send({ error: "no item with this asset id" });
+      return rows[0];
+    });
+
   app.get("/api/my-borrows", { preHandler: requireUser }, async (req) => {
     const active = await query(`
-      select session_id, item_name, category, asset_id, checked_out_at, due_at, is_overdue
+      select session_id, item_name, category, asset_id, checked_out_at, due_at, is_overdue, unit_confirmed
       from active_borrows where user_id = $1 order by due_at`, [req.user!.id]);
     const history = await query(`
-      select s.id as session_id, t.name as item_name, s.status, s.checked_out_at, s.returned_at
+      select s.id as session_id, t.name as item_name, u.asset_id, s.status,
+             s.checked_out_at, s.returned_at
       from borrow_sessions s
       join item_units u on u.id = s.item_unit_id
       join item_types t on t.id = u.item_type_id

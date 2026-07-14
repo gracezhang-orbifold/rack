@@ -17,13 +17,22 @@ A self-hosted Fastify API in front of plain Postgres — two containers (`db`,
   non-`/api` path.
   - `POST /api/borrow` — claims a unit atomically (`borrow_unit` function),
     unlocks the cabinet via Seam, and cancels the session if the door never
-    opened.
+    opened. Optional `unit_id` claims one specific unit (QR scan checkout).
   - `POST /api/return` — unlocks so the user can put the item back, then
     `mark_returned`.
+  - `GET /api/units/by-asset/:assetId` — resolves a printed QR label to its
+    unit; the SPA route `/scan/:assetId` uses it to check out that exact unit.
+    Admins print labels from `/admin/labels` (`POST /api/admin/assign-asset-ids`
+    backfills sequential `RACK-NNNN` ids for unlabeled units).
+  - `/api/requests` — waitlist / notify-when-available / future reservations
+    against an item type (`item_requests` table). When a unit becomes available
+    (return, admin status change, new stock), everyone with a `notify` request
+    and the head of the waitlist get an email; reservations get a reminder
+    email within a day of their start date via the daily cron.
   - Reminders run **in-process** via `node-cron` (daily at 09:00), calling the
     same `runReminders()` the dev trigger (`POST /api/dev/run-reminders`,
-    non-production only) uses — one email per user listing all overdue items
-    (Resend).
+    non-production only) uses — one email per user listing all overdue items,
+    plus upcoming-reservation reminders (Resend).
 - **Postgres** — schema in `db/migrations/`, applied by a small migration
   runner (`api/src/migrate.ts`) that tracks applied files in `_migrations`.
   All authorization lives in the API layer (no RLS); the API is the only

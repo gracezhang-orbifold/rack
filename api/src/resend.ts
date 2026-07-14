@@ -13,6 +13,13 @@ export interface SendEmailResult {
   error?: unknown;
 }
 
+// Escape a value for interpolation into email HTML. User-controlled strings
+// (names, damage notes) and even admin-entered item names must never reach
+// the markup raw.
+export const escapeHtml = (s: string) =>
+  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+
 export async function sendEmail(opts: {
   to: string;
   subject: string;
