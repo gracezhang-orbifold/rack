@@ -29,6 +29,14 @@ A self-hosted Fastify API in front of plain Postgres — two containers (`db`,
     (return, admin status change, new stock), everyone with a `notify` request
     and the head of the waitlist get an email; reservations get a reminder
     email within a day of their start date via the daily cron.
+  - Item types can define **return questions** (e.g. SD cards: "What's on the
+    card?", "Important — must not be wiped?"). Users answer them on return;
+    a flagged answer emails admins and lands in the **attention queue**
+    (`GET /api/admin/attention`, resolve via
+    `POST /api/admin/attention/:id/resolve`) without holding the unit, and the
+    next borrower of that exact unit sees the previous report in the borrow
+    response (`last_return`). Borrowing is refused with a 409 while the caller
+    has any overdue loan — returning or extending clears it.
   - Reminders run **in-process** via `node-cron` (daily at 09:00), calling the
     same `runReminders()` the dev trigger (`POST /api/dev/run-reminders`,
     non-production only) uses — one email per user listing all overdue items,
