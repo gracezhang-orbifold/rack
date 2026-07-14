@@ -4,29 +4,56 @@ import { requireUser } from "../auth.js";
 import { unlockDoor } from "../seam.js";
 import { processItemAvailability } from "../requests.js";
 import { escapeHtml as esc, sendEmail } from "../resend.js";
+import { validateAnswers, computeFlagged, renderAnswers,
+  type ReturnQuestion, type ReturnAnswers, type AnswerPair } from "../questionnaire.js";
 
-// Damaged return: tell every admin what came back broken and who reported it.
-// Best-effort — the return itself must not fail on email trouble.
-async function notifyAdminsOfDamage(sessionId: string, note: string, reporter: { email: string; full_name: string | null }) {
+// Best-effort admin broadcast — the return itself must not fail on email trouble.
+async function emailAdmins(subject: string, html: string) {
   try {
-    const { rows: [item] } = await query(`
-      select t.name, u.asset_id from borrow_sessions s
-      join item_units u on u.id = s.item_unit_id
-      join item_types t on t.id = u.item_type_id where s.id = $1`, [sessionId]);
     const { rows: admins } = await query(`select email from profiles where role = 'admin'`);
-    const label = item ? `${item.name}${item.asset_id ? ` (${item.asset_id})` : ""}` : "an item";
     for (const a of admins) {
-      const result = await sendEmail({
-        to: a.email,
-        subject: `Rack: damage reported on ${label}`,
-        html: `<p>${esc(reporter.full_name ?? reporter.email)} returned <strong>${esc(label)}</strong> and reported damage:</p>
-<blockquote>${esc(note)}</blockquote>
-<p>The unit has been set to <strong>needs repair</strong> and won't be borrowable until an admin clears it.</p><p>— Rack</p>`,
-      });
-      if (!result.ok) console.error("damage email failed for", a.email);
+      const result = await sendEmail({ to: a.email, subject, html });
+      if (!result.ok) console.error("admin email failed for", a.email);
     }
   } catch (err) {
-    console.error("damage notification failed for session", sessionId, err);
+    console.error("admin notification failed", err);
+  }
+}
+
+async function itemLabelForSession(sessionId: string) {
+  const { rows: [item] } = await query(`
+    select t.name, u.asset_id from borrow_sessions s
+    join item_units u on u.id = s.item_unit_id
+    join item_types t on t.id = u.item_type_id where s.id = $1`, [sessionId]);
+  return item ? `${item.name}${item.asset_id ? ` (${item.asset_id})` : ""}` : "an item";
+}
+
+// Damaged return: tell every admin what came back broken and who reported it.
+async function notifyAdminsOfDamage(sessionId: string, note: string, reporter: { email: string; full_name: string | null }) {
+  try {
+    const label = await itemLabelForSession(sessionId);
+    await emailAdmins(`Rack: damage reported on ${label}`,
+      `<p>${esc(reporter.full_name ?? reporter.email)} returned <strong>${esc(label)}</strong> and reported damage:</p>
+<blockquote>${esc(note)}</blockquote>
+<p>The unit has been set to <strong>needs repair</strong> and won't be borrowable until an admin clears it.</p><p>— Rack</p>`);
+  } catch (err) {
+    console.error("return notification failed for session", sessionId, err);
+  }
+}
+
+// Flagged return (e.g. "important contents — don't wipe"): the unit stays
+// borrowable, so admins need to act before the next borrower wipes it.
+async function notifyAdminsOfFlag(sessionId: string, pairs: AnswerPair[], reporter: { email: string; full_name: string | null }) {
+  try {
+    const label = await itemLabelForSession(sessionId);
+    const fmtVal = (v: string | boolean) => (v === true ? "yes" : v === false ? "no" : v);
+    const list = pairs.map((p) => `<li>${esc(p.label)} <strong>${esc(String(fmtVal(p.value)))}</strong></li>`).join("");
+    await emailAdmins(`Rack: return flagged for attention — ${label}`,
+      `<p>${esc(reporter.full_name ?? reporter.email)} returned <strong>${esc(label)}</strong> with answers that need attention:</p>
+<ul>${list}</ul>
+<p>The unit is still borrowable — review it in the admin attention queue before someone takes it.</p><p>— Rack</p>`);
+  } catch (err) {
+    console.error("return notification failed for session", sessionId, err);
   }
 }
 
@@ -136,9 +163,10 @@ export async function borrowRoutes(app: FastifyInstance) {
       }
     });
 
-  app.post<{ Body: { session_id?: string; asset_id?: string; damaged?: boolean; note?: string } }>(
+  app.post<{ Body: { session_id?: string; asset_id?: string; damaged?: boolean; note?: string;
+    answers?: ReturnAnswers } }>(
     "/api/return", { preHandler: requireUser }, async (req, reply) => {
-      const { session_id, asset_id, damaged, note } = req.body ?? {};
+      const { session_id, asset_id, damaged, note, answers } = req.body ?? {};
       if (!session_id) return reply.code(400).send({ error: "session_id is required" });
       if (damaged !== undefined && typeof damaged !== "boolean")
         return reply.code(400).send({ error: "damaged must be a boolean" });
@@ -146,9 +174,13 @@ export async function borrowRoutes(app: FastifyInstance) {
         return reply.code(400).send({ error: "note must be a string of at most 500 characters" });
       if (damaged && !note?.trim())
         return reply.code(400).send({ error: "please describe the damage" });
+      if (answers !== undefined && (typeof answers !== "object" || answers === null || Array.isArray(answers)))
+        return reply.code(400).send({ error: "answers must be an object" });
       const { rows } = await query(
-        `select s.id, s.status, s.item_unit_id, s.user_id, u.asset_id
-         from borrow_sessions s join item_units u on u.id = s.item_unit_id
+        `select s.id, s.status, s.item_unit_id, s.user_id, u.asset_id, t.return_questions
+         from borrow_sessions s
+         join item_units u on u.id = s.item_unit_id
+         join item_types t on t.id = u.item_type_id
          where s.id = $1`, [session_id]);
       const session = rows[0];
       if (!session || (session.user_id !== req.user!.id && req.user!.role !== "admin"))
@@ -165,6 +197,11 @@ export async function borrowRoutes(app: FastifyInstance) {
         if (asset_id !== session.asset_id)
           return reply.code(409).send({ error: `that label doesn't match — this loan is for ${session.asset_id}` });
       }
+      const questions: ReturnQuestion[] = session.return_questions ?? [];
+      const ans: ReturnAnswers = answers ?? {};
+      const answerErr = validateAnswers(questions, ans);
+      if (answerErr) return reply.code(400).send({ error: answerErr });
+      const flagged = computeFlagged(questions, ans);
       const lock = await lockForUnit(session.item_unit_id);
       if (lock) {
         await logEvent({ lock_id: lock.id, session_id: session.id, user_id: req.user!.id,
@@ -178,9 +215,10 @@ export async function borrowRoutes(app: FastifyInstance) {
           return reply.code(502).send({ error: "cabinet did not unlock — item still checked out, please retry" });
       }
       try {
-        await query(`select mark_returned($1, $2, $3, $4, $5)`,
+        await query(`select mark_returned($1, $2, $3, $4, $5, $6, $7)`,
           [session.id, req.user!.id, req.user!.role === "admin",
-           damaged ?? false, note?.trim() || null]);
+           damaged ?? false, note?.trim() || null,
+           Object.keys(ans).length ? JSON.stringify(ans) : null, flagged]);
       } catch (e: any) {
         // Another concurrent /api/return (or an admin) already closed this
         // session between our status check above and this call — surface it
@@ -197,6 +235,9 @@ export async function borrowRoutes(app: FastifyInstance) {
           `select item_type_id from item_units where id = $1`, [session.item_unit_id]);
         if (unit) await processItemAvailability(unit.item_type_id);
       }
-      return { session_id: session.id, status: "returned", damaged: damaged ?? false };
+      if (flagged) {
+        await notifyAdminsOfFlag(session.id, renderAnswers(questions, ans), req.user!);
+      }
+      return { session_id: session.id, status: "returned", damaged: damaged ?? false, flagged };
     });
 }

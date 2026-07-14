@@ -76,5 +76,19 @@ check "type created with questions" "yes" "$([ -n "$SDT" ] && echo yes || echo n
 check "questions echoed on list" "2" "$(curl -sb "$AJ" "$API/api/admin/item-types" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{const t=JSON.parse(d).find(x=>x.name==="Smoke SD card");console.log(t?t.return_questions.length:"")})')"
 check "bad question config rejected" "400" "$(curl -s -o /dev/null -w '%{http_code}' -b "$AJ" "$API/api/admin/item-types" -H 'Content-Type: application/json' -d '{"name":"Bad","category":"X","return_questions":[{"id":"a","label":"L","kind":"nope"}]}')"
 
+curl -sb "$AJ" "$API/api/admin/item-units" -H 'Content-Type: application/json' \
+  -d "{\"item_type_id\":\"$SDT\"}" >/dev/null
+B4=$(curl -sb "$UJ" "$API/api/borrow" -H 'Content-Type: application/json' -d "{\"item_type_id\":\"$SDT\"}")
+S4=$(echo "$B4" | jqv session_id)
+check "my-borrows carries questions" "2" "$(curl -sb "$UJ" "$API/api/my-borrows" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{const a=JSON.parse(d).active.find(b=>b.item_name==="Smoke SD card");console.log(a?a.return_questions.length:"")})')"
+check "return without yes/no answer is 400" "400" "$(curl -s -o /dev/null -w '%{http_code}' -b "$UJ" "$API/api/return" -H 'Content-Type: application/json' -d "{\"session_id\":\"$S4\"}")"
+check "unknown answer key is 400" "400" "$(curl -s -o /dev/null -w '%{http_code}' -b "$UJ" "$API/api/return" -H 'Content-Type: application/json' -d "{\"session_id\":\"$S4\",\"answers\":{\"zz\":true,\"q_keep\":true}}")"
+RET4=$(curl -sb "$UJ" "$API/api/return" -H 'Content-Type: application/json' \
+  -d "{\"session_id\":\"$S4\",\"answers\":{\"q_contents\":\"client shoot raw files\",\"q_keep\":true}}")
+check "flagged return succeeds" "returned" "$(echo "$RET4" | jqv status)"
+check "return reports flagged" "true" "$(echo "$RET4" | jqv flagged)"
+check "flagged unit stays available" "available" "$(sql "select u.status from item_units u join borrow_sessions s on s.item_unit_id = u.id where s.id = '$S4';")"
+check "answers stored" "true" "$(sql "select (return_answers->>'q_keep') from borrow_sessions where id = '$S4';")"
+
 echo; echo "== Results: $PASS passed, $FAIL failed"
 exit $([ "$FAIL" -eq 0 ] && echo 0 || echo 1)
