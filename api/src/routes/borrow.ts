@@ -178,9 +178,17 @@ export async function borrowRoutes(app: FastifyInstance) {
         user_id: req.user!.id, type: unlock.ok ? "unlock_succeeded" : "unlock_failed",
         attemptId: unlock.actionAttemptId, detail: unlock.ok ? {} : { error: unlock.error } });
       if (!unlock.ok) {
-        await query(`select cancel_borrow_session($1)`, [session.session_id]);
-        if (accessory && "session_id" in accessory)
-          await query(`select cancel_borrow_session($1)`, [accessory.session_id]);
+        // Cancel every session this request created; one failed cancel must
+        // not strand the other, and the caller still gets the 502 either way.
+        const cancels = [session.session_id];
+        if (accessory && "session_id" in accessory) cancels.push(accessory.session_id);
+        for (const id of cancels) {
+          try {
+            await query(`select cancel_borrow_session($1)`, [id]);
+          } catch (err) {
+            console.error("cancel_borrow_session failed for session", id, err);
+          }
+        }
         return reply.code(502).send({ error: "cabinet did not unlock — item not checked out, please retry" });
       }
       return { ...session, unlock: "ok", last_return, accessory };
