@@ -18,6 +18,7 @@ export function ScanScreen() {
   const borrow = useBorrow();
   const navigate = useNavigate();
   const [days, setDays] = useState(7);
+  const [withKit, setWithKit] = useState(true);
   const [result, setResult] = useState<BorrowResult | null>(null);
 
   if (unit.isLoading) return <Spinner />;
@@ -33,6 +34,7 @@ export function ScanScreen() {
     );
   }
   const u = unit.data!;
+  const kitOffer = u.accessory && u.accessory.available_units > 0 ? u.accessory : null;
 
   if (result) {
     const msg = borrowResultMessage(result);
@@ -40,6 +42,12 @@ export function ScanScreen() {
       <div className="py-8 text-center">
         <h2 className="mb-1 text-lg font-semibold">{msg.title}</h2>
         <p className="mb-5 text-sm text-gray-600">{msg.body}</p>
+        {result.accessory && "session_id" in result.accessory && (
+          <p className="mb-2 text-sm text-gray-600">Accessory kit checked out too — confirm both labels from My Items.</p>
+        )}
+        {result.accessory && "error" in result.accessory && (
+          <p className="mb-2 text-sm text-amber-800">{result.accessory.error}</p>
+        )}
         <LastReturnNotice lastReturn={result.last_return} />
         <Button className="w-full" onClick={() => navigate("/my-items")}>Done</Button>
       </div>
@@ -63,9 +71,16 @@ export function ScanScreen() {
               </button>
             ))}
           </div>
+          {kitOffer && (
+            <label className="mb-4 flex items-center gap-2 text-sm text-gray-700">
+              <input type="checkbox" className="h-4 w-4" checked={withKit}
+                onChange={(e) => setWithKit(e.target.checked)} />
+              Also take an accessory kit ({kitOffer.available_units} available)
+            </label>
+          )}
           {borrow.isError && <p className="mb-3 text-sm text-red-600">{errorMessage(borrow.error)}</p>}
           <Button className="w-full" disabled={borrow.isPending}
-            onClick={() => borrow.mutate({ item_type_id: u.item_type_id, days, unit_id: u.unit_id }, { onSuccess: setResult })}>
+            onClick={() => borrow.mutate({ item_type_id: u.item_type_id, days, unit_id: u.unit_id, with_accessory: kitOffer && withKit ? true : undefined }, { onSuccess: setResult })}>
             {borrow.isPending ? "Unlocking…" : "Confirm & unlock"}
           </Button>
         </>
