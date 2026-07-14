@@ -65,6 +65,33 @@ describe("borrow/return", () => {
     expect(c.rows[0].n).toBe(1);
     seamFail = false;
   });
+  it("failure-isolates dual cancel: unlock failure with a kit cancels both sessions and frees both units", async () => {
+    const cabinetId = (await pool.query(`select id from cabinets limit 1`)).rows[0].id;
+    const { rows: [camera] } = await pool.query(
+      `insert into item_types (name, category) values ('Test Kit Camera', 'Camera') returning id`);
+    const { rows: [kit] } = await pool.query(
+      `insert into item_types (name, category) values ('Test Kit Accessory', 'Accessories') returning id`);
+    await pool.query(`update item_types set accessory_type_id = $1 where id = $2`, [kit.id, camera.id]);
+    const { rows: [cameraUnit] } = await pool.query(
+      `insert into item_units (item_type_id, cabinet_id, status) values ($1, $2, 'available') returning id`,
+      [camera.id, cabinetId]);
+    const { rows: [kitUnit] } = await pool.query(
+      `insert into item_units (item_type_id, cabinet_id, status) values ($1, $2, 'available') returning id`,
+      [kit.id, cabinetId]);
+    await pool.query(`update locks set seam_device_id = 'dev-1'`);
+    seamFail = true;
+    const res = await borrow({ item_type_id: camera.id, with_accessory: true });
+    expect(res.statusCode).toBe(502);
+    const sessions = await pool.query(
+      `select status from borrow_sessions where item_unit_id in ($1, $2)`, [cameraUnit.id, kitUnit.id]);
+    expect(sessions.rows).toHaveLength(2);
+    expect(sessions.rows.every((r) => r.status === "cancelled")).toBe(true);
+    const units = await pool.query(
+      `select status from item_units where id in ($1, $2)`, [cameraUnit.id, kitUnit.id]);
+    expect(units.rows).toHaveLength(2);
+    expect(units.rows.every((r) => r.status === "available")).toBe(true);
+    seamFail = false;
+  });
   it("409 when no units available", async () => {
     const oculus = (await pool.query(`select id from item_types where name = 'Oculus'`)).rows[0].id;
     await borrow({ item_type_id: oculus });
