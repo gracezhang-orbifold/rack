@@ -4,6 +4,21 @@ import { requireAdmin } from "../auth.js";
 import { processItemAvailability } from "../requests.js";
 import { validateQuestions, renderAnswers, type ReturnQuestion, type ReturnAnswers } from "../questionnaire.js";
 
+// Accessory-kit link validation: the id must name an existing item type and
+// differ from the type being edited. Returns an error message or null.
+async function accessoryLinkError(value: unknown, selfId: string | null): Promise<string | null> {
+  if (value === null) return null;
+  if (typeof value !== "string" || !value) return "accessory_type_id must be an item type id or null";
+  if (selfId !== null && value === selfId) return "an item type cannot be its own accessory kit";
+  try {
+    const { rows } = await query(`select 1 from item_types where id = $1`, [value]);
+    if (!rows[0]) return "accessory type not found";
+  } catch {
+    return "accessory_type_id must be an item type id or null"; // malformed uuid
+  }
+  return null;
+}
+
 export async function adminRoutes(app: FastifyInstance) {
   app.addHook("preHandler", requireAdmin);
 
@@ -86,7 +101,7 @@ export async function adminRoutes(app: FastifyInstance) {
 
   app.get("/api/admin/item-types", async () => {
     const { rows } = await query(`
-      select t.id, t.name, t.category, t.notes, t.return_questions,
+      select t.id, t.name, t.category, t.notes, t.return_questions, t.accessory_type_id,
         coalesce(json_agg(json_build_object(
           'id', u.id, 'asset_id', u.asset_id, 'status', u.status,
           'owner', u.owner, 'notes', u.notes, 'created_at', u.created_at) order by u.created_at)
@@ -96,12 +111,17 @@ export async function adminRoutes(app: FastifyInstance) {
     return rows;
   });
 
-  app.post<{ Body: { name?: string; category?: string; notes?: string; return_questions?: unknown } }>(
+  app.post<{ Body: { name?: string; category?: string; notes?: string; return_questions?: unknown;
+    accessory_type_id?: unknown } }>(
     "/api/admin/item-types", async (req, reply) => {
-      const { name, category, notes, return_questions } = req.body ?? {};
+      const { name, category, notes, return_questions, accessory_type_id } = req.body ?? {};
       if (!name || !category) return reply.code(400).send({ error: "name and category are required" });
       if (return_questions !== undefined) {
         const err = validateQuestions(return_questions);
+        if (err) return reply.code(400).send({ error: err });
+      }
+      if (accessory_type_id !== undefined) {
+        const err = await accessoryLinkError(accessory_type_id, null);
         if (err) return reply.code(400).send({ error: err });
       }
       const dup = await query(
@@ -110,27 +130,37 @@ export async function adminRoutes(app: FastifyInstance) {
       if (dup.rows[0])
         return reply.code(409).send({ error: "this item already exists in that category — add a unit to it instead" });
       const { rows } = await query(
-        `insert into item_types (name, category, notes, return_questions) values ($1, $2, $3, $4) returning *`,
-        [name, category, notes ?? null, JSON.stringify(return_questions ?? [])]);
+        `insert into item_types (name, category, notes, return_questions, accessory_type_id)
+         values ($1, $2, $3, $4, $5) returning *`,
+        [name, category, notes ?? null, JSON.stringify(return_questions ?? []),
+         (accessory_type_id as string | undefined) ?? null]);
       return rows[0];
     });
 
   app.patch<{ Params: { id: string };
-    Body: { name?: string; category?: string; notes?: string; return_questions?: unknown } }>(
+    Body: { name?: string; category?: string; notes?: string; return_questions?: unknown;
+      accessory_type_id?: unknown } }>(
     "/api/admin/item-types/:id", async (req, reply) => {
       const { return_questions } = req.body ?? {};
       if (return_questions !== undefined) {
         const err = validateQuestions(return_questions);
         if (err) return reply.code(400).send({ error: err });
       }
+      const hasAccessory = Object.prototype.hasOwnProperty.call(req.body ?? {}, "accessory_type_id");
+      if (hasAccessory) {
+        const err = await accessoryLinkError(req.body!.accessory_type_id, req.params.id);
+        if (err) return reply.code(400).send({ error: err });
+      }
       const { rows } = await query(`
         update item_types set
           name = coalesce($2, name), category = coalesce($3, category),
           notes = coalesce($4, notes),
-          return_questions = coalesce($5::jsonb, return_questions)
+          return_questions = coalesce($5::jsonb, return_questions),
+          accessory_type_id = case when $6 then $7::uuid else accessory_type_id end
         where id = $1 returning *`,
         [req.params.id, req.body?.name ?? null, req.body?.category ?? null, req.body?.notes ?? null,
-         return_questions === undefined ? null : JSON.stringify(return_questions)]);
+         return_questions === undefined ? null : JSON.stringify(return_questions),
+         hasAccessory, hasAccessory ? (req.body!.accessory_type_id as string | null) : null]);
       if (!rows[0]) return reply.code(404).send({ error: "not found" });
       return rows[0];
     });
