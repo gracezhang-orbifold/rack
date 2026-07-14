@@ -132,8 +132,8 @@ In `web/src`:
   the damage note, and a Resolve button; damaged rows link to the unit's
   status control (existing `useUpdateUnit`).
 - **Borrow confirmation** (Browse and Scan share the borrow mutation): when
-  `last_return` is flagged or has answers, show a warning card ("Previous
-  borrower reported: …").
+  `last_return` reports anything — flagged, damaged, a note, or answers —
+  show a warning card ("Previous borrower reported: …").
 
 ## Edge cases
 
