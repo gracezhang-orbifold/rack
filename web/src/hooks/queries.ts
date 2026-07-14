@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../lib/api";
-import type { Me } from "../lib/types";
+import type { Me, ReturnAnswers, ReturnQuestion } from "../lib/types";
 
 export function useMe() {
   return useQuery<Me | null>({
@@ -22,6 +22,7 @@ export const useAvailability = () => useQuery({ queryKey: ["availability"], quer
 export const useMyBorrows = () => useQuery({ queryKey: ["my-borrows"], queryFn: api.myBorrows });
 export const useAdminBorrows = () => useQuery({ queryKey: ["admin-borrows"], queryFn: api.adminBorrows });
 export const useAdminInventory = () => useQuery({ queryKey: ["inventory"], queryFn: api.adminItemTypes });
+export const useAdminAttention = () => useQuery({ queryKey: ["attention"], queryFn: api.adminAttention });
 export const useMyRequests = () => useQuery({ queryKey: ["my-requests"], queryFn: api.myRequests });
 export const useUnitByAsset = (assetId: string) =>
   useQuery({ queryKey: ["unit-by-asset", assetId], queryFn: () => api.unitByAsset(assetId), retry: false });
@@ -64,6 +65,7 @@ function invalidateBorrowViews(qc: ReturnType<typeof useQueryClient>) {
   qc.invalidateQueries({ queryKey: ["availability"] });
   qc.invalidateQueries({ queryKey: ["my-borrows"] });
   qc.invalidateQueries({ queryKey: ["admin-borrows"] });
+  qc.invalidateQueries({ queryKey: ["attention"] });
 }
 
 export function useBorrow() {
@@ -105,7 +107,7 @@ export function useAssignAssetIds() {
 export function useReturn() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (v: { session_id: string; asset_id?: string; damaged?: boolean; note?: string }) =>
+    mutationFn: (v: { session_id: string; asset_id?: string; damaged?: boolean; note?: string; answers?: ReturnAnswers }) =>
       api.returnItem(v),
     onSuccess: () => invalidateBorrowViews(qc),
   });
@@ -129,13 +131,20 @@ export function useAdminReturn() {
   const qc = useQueryClient();
   return useMutation({ mutationFn: (session_id: string) => api.adminReturn(session_id), onSuccess: () => invalidateBorrowViews(qc) });
 }
+export function useResolveAttention() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (session_id: string) => api.resolveAttention(session_id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["attention"] }),
+  });
+}
 export function useCreateItemType() {
   const qc = useQueryClient();
   return useMutation({ mutationFn: api.createItemType, onSuccess: () => qc.invalidateQueries({ queryKey: ["inventory"] }) });
 }
 export function useUpdateItemType() {
   const qc = useQueryClient();
-  return useMutation({ mutationFn: (v: { id: string; body: { name?: string; category?: string; notes?: string } }) => api.updateItemType(v.id, v.body), onSuccess: () => qc.invalidateQueries({ queryKey: ["inventory"] }) });
+  return useMutation({ mutationFn: (v: { id: string; body: { name?: string; category?: string; notes?: string; return_questions?: ReturnQuestion[] } }) => api.updateItemType(v.id, v.body), onSuccess: () => qc.invalidateQueries({ queryKey: ["inventory"] }) });
 }
 export function useCreateUnits() {
   const qc = useQueryClient();
