@@ -113,4 +113,32 @@ describe("AdminInventoryScreen", () => {
       expect(JSON.parse((call![1] as RequestInit).body as string)).toEqual({ accessory_type_id: "t2" });
     });
   });
+
+  it("creates and links an accessory kit from the type card", async () => {
+    const f = vi.fn().mockImplementation(async (url: RequestInfo | URL) => {
+      const path = String(url);
+      if (path.endsWith("/api/admin/item-types/t1/accessory-kit"))
+        return { ok: true, status: 200, json: async () => ({
+          id: "t9", name: "GoPro 13 Black Accessory Kit", category: "Camera", created_units: 1 }) };
+      if (path.endsWith("/api/admin/item-types")) return { ok: true, status: 200, json: async () => INVENTORY };
+      return { ok: true, status: 200, json: async () => [] };
+    });
+    vi.stubGlobal("fetch", f);
+    wrap();
+
+    await screen.findByText("GoPro 13 Black", { selector: "p" });
+    await userEvent.click(screen.getAllByRole("button", { name: /add accessory kit/i })[0]);
+    // Prefilled from the item: "<name> Accessory Kit", one unit per item unit.
+    expect(screen.getByLabelText("Kit name")).toHaveValue("GoPro 13 Black Accessory Kit");
+    expect(screen.getByLabelText("Kit units")).toHaveValue(1);
+    await userEvent.click(screen.getByRole("button", { name: "Create kit" }));
+
+    await waitFor(() => {
+      const call = f.mock.calls.find(([u]) => String(u).endsWith("/api/admin/item-types/t1/accessory-kit"));
+      expect(call).toBeTruthy();
+      expect(JSON.parse((call![1] as RequestInit).body as string)).toEqual({
+        name: "GoPro 13 Black Accessory Kit", count: 1,
+      });
+    });
+  });
 });

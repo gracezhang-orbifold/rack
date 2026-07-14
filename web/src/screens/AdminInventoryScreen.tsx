@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { useAdminInventory, useCreateItemType, useCreateUnits, useUnitHistory, useUpdateItemType, useUpdateUnit } from "../hooks/queries";
+import { useAddAccessoryKit, useAdminInventory, useCreateItemType, useCreateUnits, useUnitHistory, useUpdateItemType, useUpdateUnit } from "../hooks/queries";
 import { Button, Input, Spinner, useToast } from "../components/ui";
 import { errorMessage } from "../lib/borrowResult";
 import type { AdminItemType, ReturnQuestion, UnitStatus } from "../lib/types";
@@ -103,6 +103,46 @@ function ReturnQuestionsEditor({ type }: { type: AdminItemType }) {
             {update.isPending ? "Saving…" : "Save questions"}
           </Button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// The kit ships in the item's box, so it usually isn't in inventory yet:
+// one call creates the kit type + its units and links it to the item.
+function AddAccessoryKit({ type }: { type: AdminItemType }) {
+  const add = useAddAccessoryKit();
+  const toast = useToast();
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState(`${type.name} Accessory Kit`);
+  const [count, setCount] = useState(
+    Math.max(type.units.filter((u) => u.status !== "retired").length, 1));
+
+  if (!open) {
+    return (
+      <button className="mb-2 text-xs text-gray-500 underline" onClick={() => setOpen(true)}>
+        + Add accessory kit
+      </button>
+    );
+  }
+  return (
+    <div className="mb-2 flex flex-col gap-2 rounded-lg bg-gray-50 p-2">
+      <Input aria-label="Kit name" value={name} onChange={(e) => setName(e.target.value)} />
+      <label className="flex items-center justify-between text-xs text-gray-500">
+        Units
+        <input type="number" min={1} max={100} value={count} aria-label="Kit units"
+          className="w-20 rounded-lg border border-gray-300 px-2 py-1 text-sm"
+          onChange={(e) => setCount(Number(e.target.value))} />
+      </label>
+      <div className="flex gap-2">
+        <Button variant="secondary" onClick={() => setOpen(false)}>Cancel</Button>
+        <Button disabled={!name.trim() || count < 1 || add.isPending}
+          onClick={() => add.mutate({ id: type.id, body: { name: name.trim(), count } }, {
+            onSuccess: (r) => { setOpen(false); toast(`Accessory kit created — ${r.created_units} unit${r.created_units === 1 ? "" : "s"}.`); },
+            onError: (e) => toast(errorMessage(e), "error"),
+          })}>
+          {add.isPending ? "Creating…" : "Create kit"}
+        </Button>
       </div>
     </div>
   );
@@ -223,6 +263,7 @@ export function AdminInventoryScreen() {
                 ))}
               </select>
             </label>
+            {!t.accessory_type_id && <AddAccessoryKit key={t.id} type={t} />}
             <ul className="flex flex-col gap-1">
               {t.units.map((u) => (
                 <li key={u.id} className="text-sm">
