@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { useAdminInventory, useCreateItemType, useCreateUnits, useUnitHistory, useUpdateUnit } from "../hooks/queries";
+import { useAdminInventory, useCreateItemType, useCreateUnits, useUnitHistory, useUpdateItemType, useUpdateUnit } from "../hooks/queries";
 import { Button, Input, Spinner, useToast } from "../components/ui";
 import { errorMessage } from "../lib/borrowResult";
-import type { UnitStatus } from "../lib/types";
+import type { AdminItemType, ReturnQuestion, UnitStatus } from "../lib/types";
 
 const STATUSES: UnitStatus[] = ["available", "in_use", "needs_repair", "retired", "missing"];
 
@@ -33,6 +33,77 @@ function UnitHistory({ unitId }: { unitId: string }) {
   );
 }
 
+// Per-type return questionnaire editor. Question ids are minted here (short
+// random strings) so stored answers stay linked when labels are edited later.
+function ReturnQuestionsEditor({ type }: { type: AdminItemType }) {
+  const update = useUpdateItemType();
+  const toast = useToast();
+  const [draft, setDraft] = useState<ReturnQuestion[]>(type.return_questions);
+  const [label, setLabel] = useState("");
+  const [kind, setKind] = useState<"text" | "yes_no">("text");
+  const [flag, setFlag] = useState(false);
+  const dirty = JSON.stringify(draft) !== JSON.stringify(type.return_questions);
+
+  const add = () => {
+    if (!label.trim()) return;
+    setDraft([...draft, {
+      id: crypto.randomUUID().slice(0, 8), label: label.trim(), kind,
+      ...(kind === "yes_no" && flag ? { flag_if_yes: true as const } : {}),
+    }]);
+    setLabel(""); setKind("text"); setFlag(false);
+  };
+  const save = () =>
+    update.mutate({ id: type.id, body: { return_questions: draft } }, {
+      onSuccess: () => toast("Return questions saved."),
+      onError: (e) => toast(errorMessage(e), "error"),
+    });
+
+  return (
+    <div className="mt-2 rounded-lg bg-gray-50 p-2">
+      <ul className="flex flex-col gap-1">
+        {draft.map((q, i) => (
+          <li key={q.id} className="flex items-center justify-between text-sm text-gray-700">
+            <span>
+              {q.label}
+              <span className="ml-1 text-xs text-gray-400">{q.kind === "yes_no" ? "yes/no" : "text"}{q.flag_if_yes ? " · flags" : ""}</span>
+            </span>
+            <button className="text-xs text-gray-500 underline"
+              onClick={() => setDraft(draft.filter((_, j) => j !== i))}>
+              Remove
+            </button>
+          </li>
+        ))}
+        {draft.length === 0 && <li className="text-xs text-gray-400">No return questions yet.</li>}
+      </ul>
+      <div className="mt-2 flex flex-col gap-2">
+        <Input placeholder="Question label" value={label} onChange={(e) => setLabel(e.target.value)} />
+        <div className="flex items-center gap-3 text-sm text-gray-600">
+          <label className="flex items-center gap-1">
+            Answer type
+            <select className="rounded-lg border border-gray-300 px-2 py-1" value={kind}
+              onChange={(e) => setKind(e.target.value as "text" | "yes_no")}>
+              <option value="text">text</option>
+              <option value="yes_no">yes/no</option>
+            </select>
+          </label>
+          {kind === "yes_no" && (
+            <label className="flex items-center gap-1">
+              <input type="checkbox" checked={flag} onChange={(e) => setFlag(e.target.checked)} />
+              Flag for attention if yes
+            </label>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <Button variant="secondary" onClick={add} disabled={!label.trim()}>Add question</Button>
+          <Button onClick={save} disabled={!dirty || update.isPending}>
+            {update.isPending ? "Saving…" : "Save questions"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function AdminInventoryScreen() {
   const inventory = useAdminInventory();
   const createType = useCreateItemType();
@@ -42,6 +113,7 @@ export function AdminInventoryScreen() {
   const [newName, setNewName] = useState("");
   const [newCategory, setNewCategory] = useState("");
   const [expandedUnit, setExpandedUnit] = useState<string | null>(null);
+  const [editQuestions, setEditQuestions] = useState<string | null>(null);
   const [q, setQ] = useState("");
 
   if (inventory.isLoading) return <Spinner />;
@@ -124,6 +196,11 @@ export function AdminInventoryScreen() {
               </div>
               <Button variant="secondary" onClick={() => addUnit(t.id)} disabled={createUnits.isPending}>+ Unit</Button>
             </div>
+            <button className="mb-2 text-xs text-gray-500 underline"
+              onClick={() => setEditQuestions(editQuestions === t.id ? null : t.id)}>
+              Return questions ({t.return_questions.length})
+            </button>
+            {editQuestions === t.id && <ReturnQuestionsEditor type={t} />}
             <ul className="flex flex-col gap-1">
               {t.units.map((u) => (
                 <li key={u.id} className="text-sm">
