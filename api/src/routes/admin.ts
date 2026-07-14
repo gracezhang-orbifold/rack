@@ -174,6 +174,43 @@ export async function adminRoutes(app: FastifyInstance) {
       return rows[0];
     });
 
+  // Create-and-link an accessory kit for an item type: the kit is what ships
+  // in the item's box, so it usually doesn't exist in inventory yet. One call
+  // creates the kit type (defaults: "<item> Accessory Kit", the item's
+  // category, one kit unit per non-retired item unit) and links it via
+  // accessory_type_id. The kit is a normal type from then on.
+  app.post<{ Params: { id: string }; Body: { name?: string; count?: number } }>(
+    "/api/admin/item-types/:id/accessory-kit", async (req, reply) => {
+      const { rows: [parent] } = await query(`
+        select t.*, (select count(*)::int from item_units u
+                     where u.item_type_id = t.id and u.status <> 'retired') as unit_count
+        from item_types t where t.id = $1`, [req.params.id]);
+      if (!parent) return reply.code(404).send({ error: "not found" });
+      if (parent.accessory_type_id)
+        return reply.code(409).send({ error: "this item already has an accessory kit" });
+      const name = req.body?.name?.trim() || `${parent.name} Accessory Kit`;
+      const count = req.body?.count ?? Math.max(parent.unit_count, 1);
+      if (typeof count !== "number" || !Number.isInteger(count) || count < 1 || count > 100)
+        return reply.code(400).send({ error: "count must be 1-100" });
+      const dup = await query(
+        `select 1 from item_types where lower(trim(name)) = lower(trim($1)) and lower(trim(category)) = lower(trim($2))`,
+        [name, parent.category]);
+      if (dup.rows[0])
+        return reply.code(409).send({ error: "a type with this name already exists in that category" });
+      const { rows: [kit] } = await query(
+        `insert into item_types (name, category) values ($1, $2) returning *`,
+        [name, parent.category]);
+      const cabinet = await query(`select id from cabinets order by created_at limit 1`);
+      await query(`
+        insert into item_units (item_type_id, cabinet_id)
+        select $1, $2 from generate_series(1, $3)`,
+        [kit.id, cabinet.rows[0]?.id ?? null, count]);
+      await query(`update item_types set accessory_type_id = $2 where id = $1`,
+        [req.params.id, kit.id]);
+      await processItemAvailability(kit.id);
+      return { ...kit, created_units: count };
+    });
+
   app.post<{ Body: { item_type_id?: string; count?: number; asset_id?: string; notes?: string } }>(
     "/api/admin/item-units", async (req, reply) => {
       const { item_type_id, count = 1, asset_id, notes } = req.body ?? {};

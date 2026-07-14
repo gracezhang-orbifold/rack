@@ -63,6 +63,13 @@ units; availability comes from the existing `item_availability` view.
   — an explicit `null` clears the link (this field deliberately skips the
   coalesce pattern, which cannot clear). `GET /api/admin/item-types`
   includes it.
+- `POST /api/admin/item-types/:id/accessory-kit` (added 2026-07-14) —
+  create-and-link in one call, because the kit ships in the item's box and
+  usually doesn't exist in inventory yet. Optional `{ name, count }`;
+  defaults: name "<item> Accessory Kit", the item's category, one kit unit
+  per non-retired item unit (min 1, max 100). 404 unknown item; 409 if the
+  item already has a kit or the name already exists in that category. The
+  kit is a normal item type from then on.
 
 ## Frontend
 
@@ -78,9 +85,12 @@ units; availability comes from the existing `item_availability` view.
   available — camera only" and continue the normal single confirm.
 - **ScanScreen**: same checkbox when the scanned unit's type has a linked
   kit with stock.
-- **Admin inventory** (`screens/AdminInventoryScreen.tsx`): an "Accessory
-  kit" select on each type card — None plus every other item type — saved
-  via the PATCH.
+- **Admin inventory** (`screens/AdminInventoryScreen.tsx`): the primary
+  action is "+ Add accessory kit" on types with no link (added 2026-07-14) —
+  an inline form prefilled with "<item> Accessory Kit" and the item's unit
+  count that calls the create-and-link endpoint. The "Accessory kit" select
+  (None plus every other item type, saved via the PATCH) stays as the
+  secondary path for relinking and unlinking.
 - **My Items**: untouched. Two rows appear, each with its own confirm badge,
   return flow, extension, and return questionnaire.
 

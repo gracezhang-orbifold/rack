@@ -147,6 +147,18 @@ S9=$(echo "$B9" | jqv session_id)
 check "kit borrows alone, no companion field" "yes" "$([ -n "$S9" ] && [ -z "$(echo "$B9" | jqv accessory.session_id)" ] && echo yes || echo no)"
 curl -sb "$UJ" "$API/api/return" -H 'Content-Type: application/json' -d "{\"session_id\":\"$S9\"}" >/dev/null
 
+# Create-and-link: the kit ships in the item's box, so it doesn't exist in
+# inventory yet — one call creates the kit type + units and links it.
+SOLO=$(curl -sb "$AJ" "$API/api/admin/item-types" -H 'Content-Type: application/json' \
+  -d '{"name":"Smoke Solo","category":"Camera"}' | jqv id)
+curl -sb "$AJ" "$API/api/admin/item-units" -H 'Content-Type: application/json' -d "{\"item_type_id\":\"$SOLO\",\"count\":3}" >/dev/null
+AKR=$(curl -sb "$AJ" "$API/api/admin/item-types/$SOLO/accessory-kit" -H 'Content-Type: application/json' -d '{}')
+AKID=$(echo "$AKR" | jqv id)
+check "kit created with default name" "Smoke Solo Accessory Kit" "$(echo "$AKR" | jqv name)"
+check "kit unit count matches item" "3" "$(sql "select count(*) from item_units where item_type_id = '$AKID';")"
+check "item linked to new kit" "$AKID" "$(sql "select accessory_type_id from item_types where id = '$SOLO';")"
+check "second kit rejected" "409" "$(curl -s -o /dev/null -w '%{http_code}' -b "$AJ" -X POST "$API/api/admin/item-types/$SOLO/accessory-kit" -H 'Content-Type: application/json' -d '{}')"
+
 echo "== Cleanup"
 # Delete every 'Smoke *' type this run created via the admin API, so the dev
 # DB (and the admin UI's dropdowns) don't accumulate test litter. Cascade by

@@ -78,6 +78,8 @@ export const api = {
     request<AdminItemType>("/admin/item-types", post(body)),
   updateItemType: (id: string, body: { name?: string; category?: string; notes?: string; return_questions?: ReturnQuestion[]; accessory_type_id?: string | null }) =>
     request<AdminItemType>(`/admin/item-types/${id}`, patch(body)),
+  addAccessoryKit: (id: string, body: { name?: string; count?: number }) =>
+    request<AdminItemType & { created_units: number }>(`/admin/item-types/${id}/accessory-kit`, post(body)),
   createUnits: (body: { item_type_id: string; count?: number; asset_id?: string; notes?: string }) =>
     request<{ created: number }>("/admin/item-units", post(body)),
   updateUnit: (id: string, body: { status?: string; asset_id?: string; owner?: string; notes?: string }) =>

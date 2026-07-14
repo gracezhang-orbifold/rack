@@ -160,3 +160,10 @@ export function useUpdateUnit() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["inventory"] }); qc.invalidateQueries({ queryKey: ["availability"] }); },
   });
 }
+export function useAddAccessoryKit() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { id: string; body: { name?: string; count?: number } }) => api.addAccessoryKit(v.id, v.body),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["inventory"] }); qc.invalidateQueries({ queryKey: ["availability"] }); },
+  });
+}
