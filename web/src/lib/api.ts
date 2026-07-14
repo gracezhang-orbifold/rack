@@ -40,8 +40,12 @@ export const api = {
 
   availability: () => request<AvailabilityItem[]>("/availability"),
   myBorrows: () => request<MyBorrows>("/my-borrows"),
-  borrow: (item_type_id: string, days: number, unit_id?: string) =>
-    request<BorrowResult>("/borrow", post({ item_type_id, days, ...(unit_id ? { unit_id } : {}) })),
+  borrow: (item_type_id: string, days: number, unit_id?: string, with_accessory?: boolean) =>
+    request<BorrowResult>("/borrow", post({
+      item_type_id, days,
+      ...(unit_id ? { unit_id } : {}),
+      ...(with_accessory ? { with_accessory: true } : {}),
+    })),
   returnItem: (v: { session_id: string; asset_id?: string; damaged?: boolean; note?: string; answers?: ReturnAnswers }) =>
     request<{ session_id: string; status: string; damaged: boolean; flagged: boolean }>("/return", post({
       session_id: v.session_id,
@@ -72,7 +76,7 @@ export const api = {
   adminItemTypes: () => request<AdminItemType[]>("/admin/item-types"),
   createItemType: (body: { name: string; category: string; notes?: string; return_questions?: ReturnQuestion[] }) =>
     request<AdminItemType>("/admin/item-types", post(body)),
-  updateItemType: (id: string, body: { name?: string; category?: string; notes?: string; return_questions?: ReturnQuestion[] }) =>
+  updateItemType: (id: string, body: { name?: string; category?: string; notes?: string; return_questions?: ReturnQuestion[]; accessory_type_id?: string | null }) =>
     request<AdminItemType>(`/admin/item-types/${id}`, patch(body)),
   createUnits: (body: { item_type_id: string; count?: number; asset_id?: string; notes?: string }) =>
     request<{ created: number }>("/admin/item-units", post(body)),
