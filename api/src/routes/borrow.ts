@@ -122,17 +122,31 @@ export async function borrowRoutes(app: FastifyInstance) {
         const { rows: [t] } = await query(
           `select accessory_type_id from item_types where id = $1`, [item_type_id]);
         if (t?.accessory_type_id) {
+          let kit;
           try {
-            const { rows: [kit] } = await query(`select * from borrow_unit($1, $2, $3, $4)`,
-              [req.user!.id, t.accessory_type_id, days ?? 7, null]);
-            // Lock the kit's due date to the camera's — borrow_unit's own
-            // now() would otherwise drift a few ms between the two calls.
-            await query(`update borrow_sessions set due_at = $1 where id = $2`,
-              [session.due_at, kit.session_id]);
-            accessory = { session_id: kit.session_id, item_unit_id: kit.item_unit_id, due_at: session.due_at };
-          } catch {
-            // Kit pool raced to empty — the camera checkout stands.
-            accessory = { error: "no kits available — camera only" };
+            ({ rows: [kit] } = await query(`select * from borrow_unit($1, $2, $3, $4)`,
+              [req.user!.id, t.accessory_type_id, days ?? 7, null]));
+          } catch (e: any) {
+            if (/no units available|not available/.test(e.message)) {
+              // Kit pool raced to empty — the camera checkout stands.
+              accessory = { error: "no kits available — camera only" };
+            } else {
+              console.error("kit claim failed for user", req.user!.id, e);
+              accessory = { error: "couldn't check out a kit — try borrowing one separately" };
+            }
+          }
+          if (kit) {
+            let dueAt = session.due_at;
+            try {
+              // Pin the kit's due date to the camera's — each borrow_unit call
+              // stamps its own now(), drifting the two by milliseconds.
+              await query(`update borrow_sessions set due_at = $1 where id = $2`,
+                [session.due_at, kit.session_id]);
+            } catch (err) {
+              console.error("kit due-date pin failed for session", kit.session_id, err);
+              dueAt = kit.due_at; // keep the kit; report its actual due date
+            }
+            accessory = { session_id: kit.session_id, item_unit_id: kit.item_unit_id, due_at: dueAt };
           }
         }
       }
