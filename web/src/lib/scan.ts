@@ -1,5 +1,6 @@
-// A label's QR encodes a URL like https://host/scan/RACK-0012, but people may
-// also type the printed asset id by hand — accept either.
+// Labels now encode the bare asset id (small 21×21 QRs); older printed labels
+// encode a URL like https://host/scan/RACK-0012, and people may also type the
+// id by hand — accept all three.
 export function parseAssetId(text: string): string | null {
   const t = text.trim();
   if (!t) return null;

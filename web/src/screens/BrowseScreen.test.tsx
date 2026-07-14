@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { BrowseScreen } from "./BrowseScreen";
@@ -12,7 +13,16 @@ const AVAIL = [
 
 function wrap() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  return render(<QueryClientProvider client={qc}><ToastProvider><BrowseScreen /></ToastProvider></QueryClientProvider>);
+  return render(
+    <QueryClientProvider client={qc}><ToastProvider>
+      <MemoryRouter initialEntries={["/"]}>
+        <Routes>
+          <Route path="/" element={<BrowseScreen />} />
+          <Route path="/scan/:assetId" element={<div>scan-page</div>} />
+        </Routes>
+      </MemoryRouter>
+    </ToastProvider></QueryClientProvider>,
+  );
 }
 
 beforeEach(() => vi.restoreAllMocks());
@@ -71,5 +81,25 @@ describe("BrowseScreen", () => {
     await userEvent.click(await screen.findByRole("button", { name: /confirm & unlock/i }));
     expect(await screen.findByText(/previous borrower flagged/i)).toBeInTheDocument();
     expect(screen.getByText(/must not be wiped/i)).toBeInTheDocument();
+  });
+
+  it("scan-label entry routes a bare asset id to the unit's checkout page", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve(AVAIL) }));
+    wrap();
+    await screen.findByText("GoPro 13 Black");
+    await userEvent.click(screen.getByRole("button", { name: /scan label/i }));
+    await userEvent.type(screen.getByPlaceholderText(/type the asset id/i), "RACK-0012");
+    await userEvent.click(screen.getByRole("button", { name: "Go" }));
+    expect(await screen.findByText("scan-page")).toBeInTheDocument();
+  });
+
+  it("scan-label entry still accepts old URL-style labels", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve(AVAIL) }));
+    wrap();
+    await screen.findByText("GoPro 13 Black");
+    await userEvent.click(screen.getByRole("button", { name: /scan label/i }));
+    await userEvent.type(screen.getByPlaceholderText(/type the asset id/i), "http://old-host:3000/scan/RACK-0007");
+    await userEvent.click(screen.getByRole("button", { name: "Go" }));
+    expect(await screen.findByText("scan-page")).toBeInTheDocument();
   });
 });

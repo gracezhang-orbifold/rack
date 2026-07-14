@@ -11,17 +11,20 @@ function QrSvg({ value }: { value: string }) {
   const [src, setSrc] = useState<string>("");
   useEffect(() => {
     let alive = true;
-    QRCode.toString(value, { type: "svg", margin: 0, errorCorrectionLevel: "M" })
+    QRCode.toString(value, { type: "svg", margin: 0, errorCorrectionLevel: "H" })
       .then((s) => { if (alive) setSrc(`data:image/svg+xml,${encodeURIComponent(s)}`); })
       .catch(() => { if (alive) setSrc(""); });
     return () => { alive = false; };
   }, [value]);
-  if (!src) return <div className="h-14 w-14" />;
-  return <img src={src} alt={`QR code for ${value}`} className="h-14 w-14" />;
+  if (!src) return <div className="h-10 w-10" />;
+  return <img src={src} alt={`QR code for ${value}`} className="h-10 w-10" />;
 }
 
-// Printable QR labels, one per unit with an asset id. The QR encodes
-// /scan/<asset_id> so a phone camera opens the checkout page directly.
+// Printable QR labels, one per unit with an asset id. The QR encodes just the
+// asset id (not a URL): that keeps every code at 21×21 modules with H-level
+// error correction, so labels stay scannable even printed ~1cm for small
+// items. Scanning happens in the app (Browse → Scan label), which routes to
+// /scan/<asset_id>; old URL-encoding labels still parse (lib/scan.ts).
 type SortBy = "category" | "name" | "added" | "number";
 
 // Trailing number for asset-id sorting (RACK-0012 → 12); non-numeric ids sink.
@@ -103,7 +106,7 @@ export function AdminLabelsScreen() {
         )}
         <p className="text-xs text-gray-500">
           Print, cut along the dashed lines, and tape each label to its item.
-          Scanning a label opens checkout for that exact unit.
+          Scan a label from Browse → Scan label to check out that exact unit.
         </p>
       </div>
 
@@ -115,8 +118,8 @@ export function AdminLabelsScreen() {
             const off = deselected.has(u.asset_id);
             return (
               <li key={u.asset_id} onClick={() => toggle(u.asset_id)} aria-selected={!off}
-                className={`flex w-[72px] cursor-pointer break-inside-avoid flex-col items-center gap-0.5 border border-dashed p-1 text-center ${off ? "border-gray-200 opacity-40 print:hidden" : "border-gray-400"}`}>
-                <QrSvg value={`${window.location.origin}/scan/${encodeURIComponent(u.asset_id)}`} />
+                className={`flex w-[60px] cursor-pointer break-inside-avoid flex-col items-center gap-0.5 border border-dashed p-1 text-center ${off ? "border-gray-200 opacity-40 print:hidden" : "border-gray-400"}`}>
+                <QrSvg value={u.asset_id} />
                 <p className="font-mono text-[10px] font-bold leading-none">{u.asset_id}</p>
                 <p className="text-[9px] leading-tight text-gray-600">{u.name}</p>
               </li>

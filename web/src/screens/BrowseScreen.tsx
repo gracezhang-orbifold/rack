@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAvailability, useBorrow, useConfirmBorrow } from "../hooks/queries";
 import { filterInventory, groupByCategory } from "../lib/filter";
 import { borrowResultMessage, errorMessage } from "../lib/borrowResult";
@@ -22,9 +23,26 @@ export function BrowseScreen() {
   const [manualId, setManualId] = useState("");
   const [scanKey, setScanKey] = useState(0);
   const [scanError, setScanError] = useState<string | null>(null);
+  const [labelScan, setLabelScan] = useState(false);
+  const [labelId, setLabelId] = useState("");
+  const [labelScanKey, setLabelScanKey] = useState(0);
+  const [labelScanError, setLabelScanError] = useState<string | null>(null);
   const borrow = useBorrow();
   const confirmUnit = useConfirmBorrow();
   const toast = useToast();
+  const navigate = useNavigate();
+
+  // Scan a printed label to jump to that unit's checkout page. Labels encode
+  // the bare asset id; older ones encode a /scan/ URL — parseAssetId takes both.
+  const goToLabel = (text: string) => {
+    const assetId = parseAssetId(text);
+    if (!assetId) {
+      setLabelScanError("That doesn't look like a Rack label — try again or type the ID.");
+      setLabelScanKey((k) => k + 1);
+      return;
+    }
+    navigate(`/scan/${encodeURIComponent(assetId)}`);
+  };
 
   const openSheet = (item: AvailabilityItem) => {
     setSelected(item); setDays(7); setResult(null);
@@ -71,7 +89,26 @@ export function BrowseScreen() {
 
   return (
     <div className="pb-4">
-      <Input placeholder="Search equipment…" value={q} onChange={(e) => setQ(e.target.value)} className="my-3" />
+      <div className="my-3 flex gap-2">
+        <Input placeholder="Search equipment…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <Button variant="secondary" onClick={() => { setLabelScan((s) => !s); setLabelId(""); setLabelScanError(null); }}>
+          Scan label
+        </Button>
+      </div>
+      {labelScan && (
+        <div className="mb-3 rounded-xl bg-white p-3 shadow-sm">
+          <QrScanner key={labelScanKey} onScan={goToLabel} />
+          <div className="mt-3 flex gap-2">
+            <Input placeholder="…or type the asset ID" value={labelId}
+              onChange={(e) => setLabelId(e.target.value)} />
+            <Button variant="secondary" disabled={!parseAssetId(labelId)}
+              onClick={() => goToLabel(labelId)}>
+              Go
+            </Button>
+          </div>
+          {labelScanError && <p className="mt-2 text-sm text-red-600">{labelScanError}</p>}
+        </div>
+      )}
       {groups.length === 0 && <p className="mt-8 text-center text-sm text-gray-500">No matches.</p>}
       {groups.map(([category, items]) => (
         <section key={category} className="mb-5">
