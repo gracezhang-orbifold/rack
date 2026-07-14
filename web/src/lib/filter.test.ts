@@ -5,7 +5,7 @@ import type { AvailabilityItem } from "./types";
 const mk = (name: string, category: string, asset_ids: string[] = []): AvailabilityItem => ({
   item_type_id: name, name, category, notes: null,
   total_units: 1, available_units: 1, in_use_units: 0, needs_repair_units: 0, missing_units: 0,
-  asset_ids,
+  asset_ids, accessory: null,
 });
 const items = [mk("GoPro 13 Black", "Camera", ["RACK-0001", "RACK-0002"]), mk("Tripod", "Camera Accessories"), mk("Manus Gloves", "Tracking", ["RACK-0017"])];
 

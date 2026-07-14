@@ -71,8 +71,8 @@ function invalidateBorrowViews(qc: ReturnType<typeof useQueryClient>) {
 export function useBorrow() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (v: { item_type_id: string; days: number; unit_id?: string }) =>
-      api.borrow(v.item_type_id, v.days, v.unit_id),
+    mutationFn: (v: { item_type_id: string; days: number; unit_id?: string; with_accessory?: boolean }) =>
+      api.borrow(v.item_type_id, v.days, v.unit_id, v.with_accessory),
     onSuccess: () => invalidateBorrowViews(qc),
   });
 }
@@ -144,7 +144,7 @@ export function useCreateItemType() {
 }
 export function useUpdateItemType() {
   const qc = useQueryClient();
-  return useMutation({ mutationFn: (v: { id: string; body: { name?: string; category?: string; notes?: string; return_questions?: ReturnQuestion[] } }) => api.updateItemType(v.id, v.body), onSuccess: () => qc.invalidateQueries({ queryKey: ["inventory"] }) });
+  return useMutation({ mutationFn: (v: { id: string; body: { name?: string; category?: string; notes?: string; return_questions?: ReturnQuestion[]; accessory_type_id?: string | null } }) => api.updateItemType(v.id, v.body), onSuccess: () => qc.invalidateQueries({ queryKey: ["inventory"] }) });
 }
 export function useCreateUnits() {
   const qc = useQueryClient();

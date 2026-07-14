@@ -62,4 +62,26 @@ describe("api client", () => {
     expect(f.mock.calls[0][0]).toBe("/api/admin/attention/s9/resolve");
     expect((f.mock.calls[0][1] as RequestInit).method).toBe("POST");
   });
+
+  it("borrow includes with_accessory only when set", async () => {
+    const f = mockFetch(200, { session_id: "s1" });
+    vi.stubGlobal("fetch", f);
+    await api.borrow("t1", 7, undefined, true);
+    expect(JSON.parse((f.mock.calls[0][1] as RequestInit).body as string)).toEqual({
+      item_type_id: "t1", days: 7, with_accessory: true,
+    });
+    await api.borrow("t1", 7);
+    expect(JSON.parse((f.mock.calls[1][1] as RequestInit).body as string)).toEqual({
+      item_type_id: "t1", days: 7,
+    });
+  });
+
+  it("updateItemType sends an explicit null accessory_type_id", async () => {
+    const f = mockFetch(200, { id: "t1" });
+    vi.stubGlobal("fetch", f);
+    await api.updateItemType("t1", { accessory_type_id: null });
+    expect(JSON.parse((f.mock.calls[0][1] as RequestInit).body as string)).toEqual({
+      accessory_type_id: null,
+    });
+  });
 });

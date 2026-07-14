@@ -1,6 +1,10 @@
 export type Role = "user" | "admin";
 export type UnitStatus = "available" | "in_use" | "needs_repair" | "retired" | "missing";
 
+export interface AccessoryInfo { item_type_id: string; name: string; available_units: number; }
+export type BorrowAccessory =
+  { session_id: string; item_unit_id: string; due_at: string } | { error: string } | null;
+
 export interface Me { id: string; email: string; role: Role; full_name: string | null; }
 
 export interface ReturnQuestion {
@@ -28,11 +32,13 @@ export interface AvailabilityItem {
   item_type_id: string; name: string; category: string; notes: string | null;
   total_units: number; available_units: number; in_use_units: number;
   needs_repair_units: number; missing_units: number; asset_ids: string[];
+  accessory: AccessoryInfo | null;
 }
 
 export interface ScannedUnit {
   unit_id: string; asset_id: string; status: UnitStatus;
   item_type_id: string; name: string; category: string;
+  accessory: AccessoryInfo | null;
 }
 
 export type RequestKind = "waitlist" | "notify" | "reservation";
@@ -55,7 +61,7 @@ export interface MyBorrows { active: ActiveBorrow[]; history: HistoryRow[]; }
 
 export interface BorrowResult {
   session_id: string; item_unit_id: string; due_at: string; unlock: "ok" | "skipped";
-  last_return: LastReturn | null;
+  last_return: LastReturn | null; accessory: BorrowAccessory;
 }
 
 export interface AdminActiveBorrow {
@@ -81,5 +87,5 @@ export interface AdminUnit {
 }
 export interface AdminItemType {
   id: string; name: string; category: string; notes: string | null;
-  return_questions: ReturnQuestion[]; units: AdminUnit[];
+  return_questions: ReturnQuestion[]; units: AdminUnit[]; accessory_type_id: string | null;
 }
