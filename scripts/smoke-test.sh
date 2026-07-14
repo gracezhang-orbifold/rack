@@ -69,6 +69,15 @@ sql "update borrow_sessions set due_at = now() - interval '2 days', checked_out_
 check "first run emails 1" "1" "$(curl -s -X POST "$API/api/dev/run-reminders" | jqv users_emailed)"
 check "second run emails 0" "0" "$(curl -s -X POST "$API/api/dev/run-reminders" | jqv users_emailed)"
 
+echo "== Overdue borrow block"
+check "overdue borrower is blocked" "409" "$(curl -s -o /dev/null -w '%{http_code}' -b "$UJ" "$API/api/borrow" -H 'Content-Type: application/json' -d "{\"item_type_id\":\"$GOPRO\"}")"
+curl -sb "$UJ" "$API/api/borrow/extend" -H 'Content-Type: application/json' \
+  -d "{\"session_id\":\"$S2\",\"days\":7}" >/dev/null
+B6=$(curl -sb "$UJ" "$API/api/borrow" -H 'Content-Type: application/json' -d "{\"item_type_id\":\"$GOPRO\"}")
+S6=$(echo "$B6" | jqv session_id)
+check "extend clears the block" "yes" "$([ -n "$S6" ] && echo yes || echo no)"
+curl -sb "$UJ" "$API/api/return" -H 'Content-Type: application/json' -d "{\"session_id\":\"$S6\"}" >/dev/null
+
 echo "== Return questionnaire config"
 SDT=$(curl -sb "$AJ" "$API/api/admin/item-types" -H 'Content-Type: application/json' \
   -d '{"name":"Smoke SD card","category":"Storage","return_questions":[{"id":"q_contents","label":"What is on the card?","kind":"text"},{"id":"q_keep","label":"Important - must not be wiped?","kind":"yes_no","flag_if_yes":true}]}' | jqv id)
