@@ -40,7 +40,7 @@ Out of scope: kit/accessory checklists.
 
 ## Data model
 
-New migration `db/migrations/009_return_questionnaire.sql`:
+New migration `db/migrations/010_return_questionnaire.sql` (009 was taken by an in-flight migration):
 
 - `alter table item_types add column return_questions jsonb not null default '[]'::jsonb`
   — an ordered array of `{ id: string, label: string, kind: 'text' | 'yes_no',
@@ -76,8 +76,8 @@ behind the existing `requireAdmin` preHandler):
   `notifyAdminsOfDamage` pattern.
 - `GET /api/admin/attention` — open queue items: session id, item type name,
   unit asset_id/status, borrower name/email, returned_at, `return_flagged`,
-  `return_damaged`, `return_note`, `return_answers`, plus the type's
-  `return_questions` so answer labels can be rendered.
+  `return_damaged`, `return_note`, `return_answers`, with answers rendered
+  server-side as `{ label, value }` pairs against the current question config.
 - `POST /api/admin/attention/:sessionId/resolve` — guarded
   `update ... where attention_resolved_at is null` stamping
   `attention_resolved_at/by`; 404 unknown session, 409 already resolved.
