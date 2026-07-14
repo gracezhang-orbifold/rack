@@ -50,4 +50,26 @@ describe("BrowseScreen", () => {
     expect(screen.getByRole("button", { name: "Notify me when available" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Reserve for a future time" })).toBeInTheDocument();
   });
+
+  it("warns about the previous borrower's flagged return after checkout", async () => {
+    const f = vi.fn().mockImplementation(async (url: RequestInfo | URL) => {
+      const path = String(url);
+      if (path.endsWith("/api/borrow"))
+        return { ok: true, status: 200, json: async () => ({
+          session_id: "s1", item_unit_id: "u1", due_at: "2026-07-20T00:00:00Z", unlock: "ok",
+          last_return: { flagged: true, damaged: false, note: null, returned_at: "2026-07-12T00:00:00Z",
+            answers: [{ label: "Important — must not be wiped?", value: true }] },
+        }) };
+      if (path.endsWith("/api/availability")) return { ok: true, status: 200, json: async () => AVAIL };
+      return { ok: true, status: 200, json: async () => [] };
+    });
+    vi.stubGlobal("fetch", f);
+    wrap();
+
+    await screen.findByText("GoPro 13 Black");
+    await userEvent.click(screen.getByRole("button", { name: "Borrow" }));
+    await userEvent.click(await screen.findByRole("button", { name: /confirm & unlock/i }));
+    expect(await screen.findByText(/previous borrower flagged/i)).toBeInTheDocument();
+    expect(screen.getByText(/must not be wiped/i)).toBeInTheDocument();
+  });
 });

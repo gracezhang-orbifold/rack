@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useBorrow, useUnitByAsset } from "../hooks/queries";
 import { Badge, Button, Spinner } from "../components/ui";
 import { RequestOptions } from "../components/RequestOptions";
+import { LastReturnNotice } from "../components/LastReturnNotice";
 import { borrowResultMessage, errorMessage } from "../lib/borrowResult";
 import { ApiError } from "../lib/api";
 import type { BorrowResult } from "../lib/types";
@@ -39,6 +40,7 @@ export function ScanScreen() {
       <div className="py-8 text-center">
         <h2 className="mb-1 text-lg font-semibold">{msg.title}</h2>
         <p className="mb-5 text-sm text-gray-600">{msg.body}</p>
+        <LastReturnNotice lastReturn={result.last_return} />
         <Button className="w-full" onClick={() => navigate("/my-items")}>Done</Button>
       </div>
     );
