@@ -54,7 +54,12 @@ check "exactly one wins" "1" "$(cat "$R1" "$R2" | grep -c session_id)"
 check "exactly one 'no units available'" "1" "$(cat "$R1" "$R2" | grep -c 'no units available')"
 
 echo "== Return"
-RET=$(curl -sb "$UJ" "$API/api/return" -H 'Content-Type: application/json' -d "{\"session_id\":\"$S1\"}")
+# Labeled units must be scanned back in — include the asset id when the
+# claimed unit has one (fresh seeds have none, so this stays a no-op there).
+A1=$(sql "select coalesce(u.asset_id, '') from borrow_sessions s join item_units u on u.id = s.item_unit_id where s.id = '$S1';")
+RBODY="{\"session_id\":\"$S1\"}"
+[ -n "$A1" ] && RBODY="{\"session_id\":\"$S1\",\"asset_id\":\"$A1\"}"
+RET=$(curl -sb "$UJ" "$API/api/return" -H 'Content-Type: application/json' -d "$RBODY")
 check "return succeeds" "returned" "$(echo "$RET" | jqv status)"
 
 echo "== Reminders (idempotent)"
@@ -63,6 +68,13 @@ S2=$(echo "$B2" | jqv session_id)
 sql "update borrow_sessions set due_at = now() - interval '2 days', checked_out_at = now() - interval '9 days' where id = '$S2';" >/dev/null
 check "first run emails 1" "1" "$(curl -s -X POST "$API/api/dev/run-reminders" | jqv users_emailed)"
 check "second run emails 0" "0" "$(curl -s -X POST "$API/api/dev/run-reminders" | jqv users_emailed)"
+
+echo "== Return questionnaire config"
+SDT=$(curl -sb "$AJ" "$API/api/admin/item-types" -H 'Content-Type: application/json' \
+  -d '{"name":"Smoke SD card","category":"Storage","return_questions":[{"id":"q_contents","label":"What is on the card?","kind":"text"},{"id":"q_keep","label":"Important - must not be wiped?","kind":"yes_no","flag_if_yes":true}]}' | jqv id)
+check "type created with questions" "yes" "$([ -n "$SDT" ] && echo yes || echo no)"
+check "questions echoed on list" "2" "$(curl -sb "$AJ" "$API/api/admin/item-types" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{const t=JSON.parse(d).find(x=>x.name==="Smoke SD card");console.log(t?t.return_questions.length:"")})')"
+check "bad question config rejected" "400" "$(curl -s -o /dev/null -w '%{http_code}' -b "$AJ" "$API/api/admin/item-types" -H 'Content-Type: application/json' -d '{"name":"Bad","category":"X","return_questions":[{"id":"a","label":"L","kind":"nope"}]}')"
 
 echo; echo "== Results: $PASS passed, $FAIL failed"
 exit $([ "$FAIL" -eq 0 ] && echo 0 || echo 1)
