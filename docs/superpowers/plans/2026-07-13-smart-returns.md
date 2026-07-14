@@ -1499,3 +1499,80 @@ In `README.md`'s Fastify API bullet list, add after the `/api/requests` bullet:
 git add README.md
 git commit -m "docs: smart returns — questionnaire + attention queue"
 ```
+
+---
+
+### Task 13: Overdue borrow block (added 2026-07-14, user-approved)
+
+A user with any overdue active loan cannot borrow anything until they return
+it or extend its deadline. Server-side only — Browse toasts 409 messages and
+Scan shows them inline already; requests (waitlist/notify/reserve) stay
+allowed.
+
+**Files:**
+- Modify: `api/src/routes/borrow.ts` (`POST /api/borrow` handler, next to the unconfirmed-checkout guard)
+- Modify: `scripts/smoke-test.sh`
+
+**Interfaces:**
+- Consumes: nothing new — same `borrow_sessions.due_at` semantics the `active_borrows` view uses (`is_overdue` = `due_at < now()` on an active session).
+- Produces: `POST /api/borrow` → 409 `{ error: "you have an overdue item — return it or extend the deadline before borrowing again" }` when the caller has an overdue active session.
+
+**Smoke placement (critical):** the `== Reminders` section leaves session
+`$S2` (GoPro, user cookie `$UJ`) active and overdue. With this rule, any later
+borrow by `$UJ` would 409 — including the `== Return questionnaire config`
+section's borrows. Insert the new section IMMEDIATELY AFTER the
+`== Reminders` section (before `== Return questionnaire config`), and clear
+the overdue state (extend `$S2`) inside it.
+
+- [ ] **Step 1: Add the failing smoke checks**
+
+Insert after the last `== Reminders` check and before the
+`== Return questionnaire config` section:
+
+```bash
+echo "== Overdue borrow block"
+check "overdue borrower is blocked" "409" "$(curl -s -o /dev/null -w '%{http_code}' -b "$UJ" "$API/api/borrow" -H 'Content-Type: application/json' -d "{\"item_type_id\":\"$GOPRO\"}")"
+curl -sb "$UJ" "$API/api/borrow/extend" -H 'Content-Type: application/json' \
+  -d "{\"session_id\":\"$S2\",\"days\":7}" >/dev/null
+B6=$(curl -sb "$UJ" "$API/api/borrow" -H 'Content-Type: application/json' -d "{\"item_type_id\":\"$GOPRO\"}")
+S6=$(echo "$B6" | jqv session_id)
+check "extend clears the block" "yes" "$([ -n "$S6" ] && echo yes || echo no)"
+curl -sb "$UJ" "$API/api/return" -H 'Content-Type: application/json' -d "{\"session_id\":\"$S6\"}" >/dev/null
+```
+
+(The final return keeps the pool clean for the questionnaire section.)
+
+- [ ] **Step 2: Run smoke test to verify the new checks fail**
+
+Run: `./scripts/smoke-test.sh` (fresh seed)
+Expected: "overdue borrower is blocked" FAILs (got 200 — no rule yet); everything else passes.
+
+- [ ] **Step 3: Implement**
+
+In `api/src/routes/borrow.ts`, in the `POST /api/borrow` handler, immediately
+after the existing unconfirmed-checkout guard (the `if (pending[0])` block):
+
+```ts
+      // Overdue loans freeze further borrowing: return the item or extend
+      // its deadline first. Requests (waitlist/notify/reserve) stay allowed.
+      const { rows: overdue } = await query(`
+        select 1 from borrow_sessions
+        where user_id = $1 and status = 'active' and due_at < now()
+        limit 1`, [req.user!.id]);
+      if (overdue[0])
+        return reply.code(409).send({
+          error: "you have an overdue item — return it or extend the deadline before borrowing again",
+        });
+```
+
+- [ ] **Step 4: Run smoke test to verify it passes**
+
+Run: `./scripts/smoke-test.sh` (fresh seed)
+Expected: all checks pass, including both new ones.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add api/src/routes/borrow.ts scripts/smoke-test.sh
+git commit -m "feat(api): block borrowing while any loan is overdue"
+```
