@@ -28,29 +28,15 @@ beforeEach(() => {
 describe("AdminInventoryScreen", () => {
   it("filters the list via the search bar (name, category, asset id)", async () => {
     wrap();
-    const items = await screen.findAllByRole("listitem");
-    // items[0] is t1 card, items[1] is t1 unit, items[2] is t2 card
-    expect(within(items[0]).getByText("GoPro 13 Black")).toBeInTheDocument();
+    expect(await screen.findByText("GoPro 13 Black", { selector: "p" })).toBeInTheDocument();
     const search = screen.getByPlaceholderText(/search inventory/i);
     await userEvent.type(search, "tracking");
-    // After filtering to "tracking", Manus Gloves should be visible
-    await waitFor(() => {
-      expect(screen.getByText("Manus Gloves")).toBeInTheDocument();
-    });
-    // GoPro card should not be the first item anymore
-    await waitFor(() => {
-      const allItems = screen.getAllByRole("listitem");
-      const firstCardName = within(allItems[0]).queryByRole("heading") || within(allItems[0]).queryByText(/Camera|Tracking/i);
-      expect(firstCardName?.textContent).not.toContain("GoPro");
-    });
+    await waitFor(() => expect(screen.queryAllByText("GoPro 13 Black", { selector: "p" })).toHaveLength(0));
+    expect(screen.getAllByText("Manus Gloves", { selector: "p" })).toHaveLength(1);
     await userEvent.clear(search);
     await userEvent.type(search, "rack-0044");
-    // After filtering to asset id, GoPro should be visible again
-    await waitFor(() => {
-      const allItems = screen.getAllByRole("listitem");
-      const hasGoPro = allItems.some(item => within(item).queryByText(/GoPro 13 Black/));
-      expect(hasGoPro).toBe(true);
-    });
+    await waitFor(() => expect(screen.queryAllByText("Manus Gloves", { selector: "p" })).toHaveLength(0));
+    expect(screen.getAllByText("GoPro 13 Black", { selector: "p" })).toHaveLength(1);
   });
 
   it("flags an existing name+category pair and blocks Add type", async () => {
