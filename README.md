@@ -37,6 +37,11 @@ A self-hosted Fastify API in front of plain Postgres — two containers (`db`,
     next borrower of that exact unit sees the previous report in the borrow
     response (`last_return`). Borrowing is refused with a 409 while the caller
     has any overdue loan — returning or extending clears it.
+  - Item types can link an **accessory kit** type (`accessory_type_id`).
+    Borrowing a camera offers "Also take an accessory kit"; the server claims
+    a kit unit in the same `POST /api/borrow` (`with_accessory: true`) as a
+    second independent session with the same due date — each piece is
+    returned, extended, and questionnaired on its own.
   - Reminders run **in-process** via `node-cron` (daily at 09:00), calling the
     same `runReminders()` the dev trigger (`POST /api/dev/run-reminders`,
     non-production only) uses — one email per user listing all overdue items,
