@@ -20,6 +20,8 @@ export function BrowseScreen() {
   const [days, setDays] = useState(7);
   const [result, setResult] = useState<BorrowResult | null>(null);
   const [confirmedAsset, setConfirmedAsset] = useState<string | null>(null);
+  const [confirmedKitAsset, setConfirmedKitAsset] = useState<string | null>(null);
+  const [withKit, setWithKit] = useState(true);
   const [manualId, setManualId] = useState("");
   const [scanKey, setScanKey] = useState(0);
   const [scanError, setScanError] = useState<string | null>(null);
@@ -47,14 +49,26 @@ export function BrowseScreen() {
   const openSheet = (item: AvailabilityItem) => {
     setSelected(item); setDays(7); setResult(null);
     setConfirmedAsset(null); setManualId(""); setScanError(null);
+    setConfirmedKitAsset(null); setWithKit(true);
     borrow.reset(); confirmUnit.reset();
   };
-  const closeSheet = () => { setSelected(null); setResult(null); setConfirmedAsset(null); };
+  const closeSheet = () => { setSelected(null); setResult(null); setConfirmedAsset(null); setConfirmedKitAsset(null); };
+
+  const kitOffer = selected?.accessory && selected.accessory.available_units > 0 ? selected.accessory : null;
+  const kitSession = result?.accessory && "session_id" in result.accessory ? result.accessory : null;
+  const kitError = result?.accessory && "error" in result.accessory ? result.accessory.error : null;
+  // Which session the next scanned label confirms: camera first, then the kit.
+  const pendingSession = result && !confirmedAsset ? result.session_id
+    : kitSession && !confirmedKitAsset ? kitSession.session_id : null;
 
   const confirmAsset = (assetId: string) => {
-    if (!result) return;
-    confirmUnit.mutate({ session_id: result.session_id, asset_id: assetId }, {
-      onSuccess: (r) => setConfirmedAsset(r.asset_id),
+    if (!pendingSession) return;
+    confirmUnit.mutate({ session_id: pendingSession, asset_id: assetId }, {
+      onSuccess: (r) => {
+        if (!confirmedAsset) setConfirmedAsset(r.asset_id);
+        else setConfirmedKitAsset(r.asset_id);
+        setManualId(""); setScanError(null); setScanKey((k) => k + 1);
+      },
       onError: (e) => {
         setScanError(e instanceof ApiError ? e.message : errorMessage(e));
         setScanKey((k) => k + 1); // remount the scanner so they can rescan
@@ -74,7 +88,8 @@ export function BrowseScreen() {
 
   const confirm = () => {
     if (!selected) return;
-    borrow.mutate({ item_type_id: selected.item_type_id, days }, {
+    borrow.mutate({ item_type_id: selected.item_type_id, days,
+      with_accessory: kitOffer && withKit ? true : undefined }, {
       onSuccess: (r) => setResult(r),
       onError: (e) => {
         if (e instanceof ApiError && e.status === 409) { toast(errorMessage(e)); closeSheet(); }
@@ -130,12 +145,13 @@ export function BrowseScreen() {
       ))}
 
       <Sheet open={selected !== null} onClose={closeSheet}>
-        {result && confirmedAsset ? (
+        {result && confirmedAsset && (!kitSession || confirmedKitAsset) ? (
           <div className="text-center">
             <h3 className="mb-1 text-lg font-semibold">All set</h3>
             <LastReturnNotice lastReturn={result.last_return} />
             <p className="mb-5 text-sm text-gray-600">
-              <span className="font-mono">{confirmedAsset}</span> is checked out to you. Close the door when you're done.
+              <span className="font-mono">{confirmedAsset}</span>
+              {confirmedKitAsset ? <> and <span className="font-mono">{confirmedKitAsset}</span> are checked out to you.</> : <> is checked out to you.</>} Close the door when you're done.
             </p>
             <Button className="w-full" onClick={closeSheet}>Done</Button>
           </div>
@@ -144,8 +160,11 @@ export function BrowseScreen() {
             <h3 className="mb-1 text-lg font-semibold">{borrowResultMessage(result).title}</h3>
             <LastReturnNotice lastReturn={result.last_return} />
             <p className="mb-3 text-sm text-gray-600">
-              Take your item, then scan the QR label on it to confirm which one you took.
+              {!confirmedAsset
+                ? "Take your item, then scan the QR label on it to confirm which one you took."
+                : "Now scan the accessory box label."}
             </p>
+            {kitError && <p className="mb-3 text-sm text-amber-800">{kitError}</p>}
             <QrScanner key={scanKey} onScan={onDecoded} />
             <div className="mt-3 flex gap-2">
               <Input placeholder="…or type the asset ID" value={manualId}
@@ -178,6 +197,13 @@ export function BrowseScreen() {
                 </button>
               ))}
             </div>
+            {kitOffer && (
+              <label className="mb-4 flex items-center gap-2 text-sm text-gray-700">
+                <input type="checkbox" className="h-4 w-4" checked={withKit}
+                  onChange={(e) => setWithKit(e.target.checked)} />
+                Also take an accessory kit ({kitOffer.available_units} available)
+              </label>
+            )}
             {borrow.isError && <p className="mb-3 text-sm text-red-600">{errorMessage(borrow.error)}</p>}
             <Button className="w-full" disabled={borrow.isPending} onClick={confirm}>
               {borrow.isPending ? "Unlocking…" : "Confirm & unlock"}
