@@ -98,5 +98,11 @@ check "resolve succeeds" "true" "$(curl -sb "$AJ" -X POST "$API/api/admin/attent
 check "resolve again is 409" "409" "$(curl -s -o /dev/null -w '%{http_code}' -b "$AJ" -X POST "$API/api/admin/attention/$S4/resolve")"
 check "attention queue empty after resolve" "0" "$(curl -sb "$AJ" "$API/api/admin/attention" | jqv '')"
 
+B5=$(curl -sb "$UJ" "$API/api/borrow" -H 'Content-Type: application/json' -d "{\"item_type_id\":\"$SDT\"}")
+check "borrow warns about last return" "true" "$(echo "$B5" | jqv last_return.flagged)"
+check "warning carries answers" "2" "$(echo "$B5" | jqv last_return.answers)"
+S5=$(echo "$B5" | jqv session_id)
+check "admin return skips questionnaire" "returned" "$(curl -sb "$AJ" "$API/api/admin/return" -H 'Content-Type: application/json' -d "{\"session_id\":\"$S5\"}" | jqv status)"
+
 echo; echo "== Results: $PASS passed, $FAIL failed"
 exit $([ "$FAIL" -eq 0 ] && echo 0 || echo 1)
