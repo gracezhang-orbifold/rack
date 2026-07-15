@@ -94,8 +94,8 @@ export function ManageTypeSheet({ type, allTypes, onClose }:
             aria-label="Accessory kit" value={kitChoice} disabled={busy}
             onChange={(e) => setKitChoice(e.target.value)}>
             <option value="">None</option>
-            {otherTypes.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
             <option value={CREATE_KIT}>+ Create a new kit…</option>
+            {otherTypes.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
           </select>
         </label>
         {kitChoice === CREATE_KIT && (

@@ -44,6 +44,7 @@ export function AdminInventoryScreen() {
   const [q, setQ] = useState("");
   const [category, setCategory] = useState("");
   const [status, setStatus] = useState("");
+  const [sort, setSort] = useState("");
 
   if (inventory.isLoading) return <Spinner />;
   if (inventory.isError) return <p className="p-4 text-sm text-muted">Couldn't load inventory.</p>;
@@ -61,6 +62,12 @@ export function AdminInventoryScreen() {
         || u.asset_id?.toLowerCase().includes(term))
       && (!category || t.category === category)
       && (!status || u.status === status));
+  if (sort) {
+    const key = ({ u, t }: (typeof rows)[number]) =>
+      sort === "asset" ? u.asset_id ?? "" : sort === "name" ? t.name
+        : sort === "category" ? t.category : u.status;
+    rows.sort((a, b) => key(a).localeCompare(key(b)));
+  }
   const emptyTypes = types.filter((t) => t.units.length === 0);
   const managed = manageType ? types.find((t) => t.id === manageType) ?? null : null;
 
@@ -90,6 +97,14 @@ export function AdminInventoryScreen() {
           className="min-h-[44px] rounded-xl border border-edge bg-surface px-3 text-sm text-text focus:border-primary focus:outline-none">
           <option value="">Status</option>
           {STATUSES.map((st) => <option key={st} value={st}>{st.replace("_", " ")}</option>)}
+        </select>
+        <select aria-label="Sort by" value={sort} onChange={(e) => setSort(e.target.value)}
+          className="min-h-[44px] rounded-xl border border-edge bg-surface px-3 text-sm text-text focus:border-primary focus:outline-none">
+          <option value="">Sort by</option>
+          <option value="asset">Asset No</option>
+          <option value="name">Name</option>
+          <option value="category">Category</option>
+          <option value="status">Status</option>
         </select>
       </div>
 
