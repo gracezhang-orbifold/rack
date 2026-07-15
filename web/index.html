@@ -3,7 +3,17 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#070C2B" />
     <title>Rack</title>
+    <script>
+      // Apply the saved theme before first paint so there is no flash.
+      (function () {
+        var t = localStorage.getItem("rack-theme") || "dark";
+        document.documentElement.dataset.theme = t;
+        var m = document.querySelector('meta[name="theme-color"]');
+        if (m) m.setAttribute("content", t === "light" ? "#F4EDDD" : "#070C2B");
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
