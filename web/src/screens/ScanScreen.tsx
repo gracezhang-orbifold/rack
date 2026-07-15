@@ -18,7 +18,7 @@ export function ScanScreen() {
   const borrow = useBorrow();
   const navigate = useNavigate();
   const [days, setDays] = useState(7);
-  const [withKit, setWithKit] = useState(true);
+  const [withKit, setWithKit] = useState(false);
   const [result, setResult] = useState<BorrowResult | null>(null);
 
   if (unit.isLoading) return <Spinner />;
