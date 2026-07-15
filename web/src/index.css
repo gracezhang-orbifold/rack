@@ -19,11 +19,11 @@
   --surface-2: 19 27 82;     /* raised: sheets, secondary buttons */
   --edge: 44 49 84;          /* the only border color — use sparingly */
   --text: 234 224 204;       /* brand cream #EAE0CC */
-  --muted: 152 147 138;      /* cream at ~60%, pre-blended on navy */
-  --primary: 45 130 183;     /* brand steel blue #2D82B7 */
-  --primary-soft: 111 177 216; /* links/accents needing AA on navy */
-  --primary-strong: 37 110 156; /* pressed */
-  --on-primary: 6 16 46;     /* deep navy text on steel blue (AA; white fails) */
+  --muted: 178 172 158;      /* cream at ~72%, pre-blended on navy (AA on cards) */
+  --primary: 140 177 194;    /* muted steel #8CB1C2 — calmer than #2D82B7 in the dark */
+  --primary-soft: 140 177 194; /* links/accents on navy */
+  --primary-strong: 110 148 168; /* pressed #6E94A8 */
+  --on-primary: 6 16 46;     /* deep navy text on steel (AA; white fails) */
   --success: 76 195 138;
   --danger: 240 122 106;
   --warning: 229 183 90;
@@ -46,6 +46,9 @@ html[data-theme="light"] {
   --warning: 138 100 20;
 }
 
+/* Reserve the scrollbar lane so centered content doesn't shift when pages
+   change height (the "header moves between pages" bug). */
+html { scrollbar-gutter: stable; }
 html, body, #root { height: 100%; }
 body {
   @apply bg-bg text-text antialiased;
