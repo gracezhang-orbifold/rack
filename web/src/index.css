@@ -1,6 +1,68 @@
+/* Archivo Variable: display face for headings/wordmark (bundled, no CDN). */
+@import "@fontsource-variable/archivo";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Design tokens — semantic CSS variables holding RGB triplets (so Tailwind
+ * opacity modifiers work: rgb(var(--x) / <alpha>)). Dark is the default
+ * theme; html[data-theme="light"] swaps the values, so components never use
+ * dark: prefixes. Palette: #0E1968 navy, #2D82B7 steel blue, #EAE0CC cream
+ * (coolors.co/0e1968-2d82b7-eae0cc).
+ */
+:root {
+  color-scheme: dark;
+  --bg: 7 12 43;             /* deep navy, derived from #0E1968 */
+  --surface: 13 20 64;       /* card */
+  --surface-2: 19 27 82;     /* raised: sheets, secondary buttons */
+  --edge: 44 49 84;          /* the only border color — use sparingly */
+  --text: 234 224 204;       /* brand cream #EAE0CC */
+  --muted: 152 147 138;      /* cream at ~60%, pre-blended on navy */
+  --primary: 45 130 183;     /* brand steel blue #2D82B7 */
+  --primary-soft: 111 177 216; /* links/accents needing AA on navy */
+  --primary-strong: 37 110 156; /* pressed */
+  --on-primary: 6 16 46;     /* deep navy text on steel blue (AA; white fails) */
+  --success: 76 195 138;
+  --danger: 240 122 106;
+  --warning: 229 183 90;
+}
+
+html[data-theme="light"] {
+  color-scheme: light;
+  --bg: 244 237 221;         /* cream-tinted, from #EAE0CC */
+  --surface: 253 250 243;
+  --surface-2: 255 255 255;
+  --edge: 214 208 194;
+  --text: 16 23 67;          /* navy ink */
+  --muted: 103 104 126;
+  --primary: 37 110 156;     /* darkened for contrast on cream */
+  --primary-soft: 24 84 128;
+  --primary-strong: 27 84 120;
+  --on-primary: 255 255 255;
+  --success: 29 122 80;
+  --danger: 194 64 47;
+  --warning: 138 100 20;
+}
+
 html, body, #root { height: 100%; }
-body { @apply bg-gray-50 text-gray-900 antialiased; }
+body {
+  @apply bg-bg text-text antialiased;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* Motion is decorative here — remove it entirely for users who ask. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Printed QR labels must stay black-on-white whatever the screen theme. */
+@media print {
+  :root { color-scheme: light; }
+  body { background: #fff !important; color: #000 !important; }
+}
