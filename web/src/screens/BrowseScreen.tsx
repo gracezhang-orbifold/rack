@@ -13,6 +13,19 @@ import type { AvailabilityItem, BorrowResult } from "../lib/types";
 
 const DAY_PRESETS = [1, 3, 7, 14];
 
+// Stock at a glance: one pip per unit, lit while available. Decorative —
+// the "N/N available" badge carries the same information as text.
+function AvailabilityPips({ available, total }: { available: number; total: number }) {
+  if (total === 0 || total > 8) return null;
+  return (
+    <span className="flex items-center gap-0.5" aria-hidden="true">
+      {Array.from({ length: total }, (_, i) => (
+        <span key={i} className={`h-1.5 w-1.5 rounded-full transition-colors ${i < available ? "bg-primary" : "bg-text/15"}`} />
+      ))}
+    </span>
+  );
+}
+
 export function BrowseScreen() {
   const availability = useAvailability();
   const [q, setQ] = useState("");
@@ -98,7 +111,7 @@ export function BrowseScreen() {
   };
 
   if (availability.isLoading) return <Spinner />;
-  if (availability.isError) return <p className="p-4 text-sm text-gray-600">Couldn't load inventory. Pull to refresh.</p>;
+  if (availability.isError) return <p className="p-4 text-sm text-muted">Couldn't load inventory. Pull to refresh.</p>;
 
   const groups = groupByCategory(filterInventory(availability.data ?? [], q));
 
@@ -106,12 +119,12 @@ export function BrowseScreen() {
     <div className="pb-4">
       <div className="my-3 flex gap-2">
         <Input placeholder="Search equipment…" value={q} onChange={(e) => setQ(e.target.value)} />
-        <Button variant="secondary" onClick={() => { setLabelScan((s) => !s); setLabelId(""); setLabelScanError(null); }}>
+        <Button variant="secondary" className="shrink-0 whitespace-nowrap" onClick={() => { setLabelScan((s) => !s); setLabelId(""); setLabelScanError(null); }}>
           Scan label
         </Button>
       </div>
       {labelScan && (
-        <div className="mb-3 rounded-xl bg-white p-3 shadow-sm">
+        <div className="mb-3 rounded-xl bg-surface p-3 shadow-sm shadow-black/20">
           <QrScanner key={labelScanKey} onScan={goToLabel} />
           <div className="mt-3 flex gap-2">
             <Input placeholder="…or type the asset ID" value={labelId}
@@ -121,19 +134,22 @@ export function BrowseScreen() {
               Go
             </Button>
           </div>
-          {labelScanError && <p className="mt-2 text-sm text-red-600">{labelScanError}</p>}
+          {labelScanError && <p className="mt-2 text-sm text-danger">{labelScanError}</p>}
         </div>
       )}
-      {groups.length === 0 && <p className="mt-8 text-center text-sm text-gray-500">No matches.</p>}
+      {groups.length === 0 && <p className="mt-8 text-center text-sm text-muted">No matches.</p>}
       {groups.map(([category, items]) => (
-        <section key={category} className="mb-5">
-          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">{category}</h2>
-          <ul className="flex flex-col gap-2">
+        <section key={category} className="mb-5 animate-fade-up">
+          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted/70">{category}</h2>
+          <ul className="grid grid-cols-1 gap-2 md:grid-cols-2 lg:grid-cols-3">
             {items.map((item) => (
-              <li key={item.item_type_id} className="flex items-center justify-between rounded-xl bg-white p-3 shadow-sm">
+              <li key={item.item_type_id} className="flex items-center justify-between rounded-xl bg-surface p-3 shadow-sm shadow-black/20">
                 <div>
                   <p className="font-medium">{item.name}</p>
-                  <Badge tone={item.available_units > 0 ? "green" : "gray"}>{item.available_units}/{item.total_units} available</Badge>
+                  <div className="flex items-center gap-2">
+                    <Badge tone={item.available_units > 0 ? "green" : "gray"}>{item.available_units}/{item.total_units} available</Badge>
+                    <AvailabilityPips available={item.available_units} total={item.total_units} />
+                  </div>
                 </div>
                 {item.available_units > 0
                   ? <Button onClick={() => openSheet(item)}>Borrow</Button>
@@ -149,7 +165,7 @@ export function BrowseScreen() {
           <div className="text-center">
             <h3 className="mb-1 text-lg font-semibold">All set</h3>
             <LastReturnNotice lastReturn={result.last_return} />
-            <p className="mb-5 text-sm text-gray-600">
+            <p className="mb-5 text-sm text-muted">
               <span className="font-mono">{confirmedAsset}</span>
               {confirmedKitAsset ? <> and <span className="font-mono">{confirmedKitAsset}</span> are checked out to you.</> : <> is checked out to you.</>} Close the door when you're done.
             </p>
@@ -159,12 +175,12 @@ export function BrowseScreen() {
           <div>
             <h3 className="mb-1 text-lg font-semibold">{borrowResultMessage(result).title}</h3>
             <LastReturnNotice lastReturn={result.last_return} />
-            <p className="mb-3 text-sm text-gray-600">
+            <p className="mb-3 text-sm text-muted">
               {!confirmedAsset
                 ? "Take your item, then scan the QR label on it to confirm which one you took."
                 : "Now scan the accessory box label."}
             </p>
-            {kitError && <p className="mb-3 text-sm text-amber-800">{kitError}</p>}
+            {kitError && <p className="mb-3 text-sm text-warning">{kitError}</p>}
             <QrScanner key={scanKey} onScan={onDecoded} />
             <div className="mt-3 flex gap-2">
               <Input placeholder="…or type the asset ID" value={manualId}
@@ -174,37 +190,37 @@ export function BrowseScreen() {
                 {confirmUnit.isPending ? "…" : "Confirm"}
               </Button>
             </div>
-            {scanError && <p className="mt-2 text-sm text-red-600">{scanError}</p>}
-            <button className="mt-4 w-full text-center text-xs text-gray-400 underline" onClick={closeSheet}>
+            {scanError && <p className="mt-2 text-sm text-danger">{scanError}</p>}
+            <button className="mt-4 w-full text-center text-xs text-muted/70 underline" onClick={closeSheet}>
               Can't scan right now? Confirm later from My Items — borrowing is paused until you do
             </button>
           </div>
         ) : selected && selected.available_units === 0 ? (
           <div>
             <h3 className="mb-1 text-lg font-semibold">{selected.name} is unavailable</h3>
-            <p className="mb-4 text-sm text-gray-500">All units are out. You can:</p>
+            <p className="mb-4 text-sm text-muted">All units are out. You can:</p>
             <RequestOptions itemTypeId={selected.item_type_id} itemName={selected.name} />
           </div>
         ) : selected ? (
           <div>
             <h3 className="mb-1 text-lg font-semibold">Borrow {selected.name}</h3>
-            <p className="mb-4 text-sm text-gray-500">How long do you need it?</p>
+            <p className="mb-4 text-sm text-muted">How long do you need it?</p>
             <div className="mb-4 flex gap-2">
               {DAY_PRESETS.map((d) => (
                 <button key={d} onClick={() => setDays(d)}
-                  className={`min-h-[44px] flex-1 rounded-xl border ${days === d ? "border-gray-900 bg-gray-900 text-white" : "border-gray-300"}`}>
+                  className={`min-h-[44px] flex-1 rounded-xl border ${days === d ? "border-primary bg-primary text-on-primary" : "border-edge"}`}>
                   {d}d
                 </button>
               ))}
             </div>
             {kitOffer && (
-              <label className="mb-4 flex items-center gap-2 text-sm text-gray-700">
+              <label className="mb-4 flex items-center gap-2 text-sm text-text">
                 <input type="checkbox" className="h-4 w-4" checked={withKit}
                   onChange={(e) => setWithKit(e.target.checked)} />
                 Also take an accessory kit ({kitOffer.available_units} available)
               </label>
             )}
-            {borrow.isError && <p className="mb-3 text-sm text-red-600">{errorMessage(borrow.error)}</p>}
+            {borrow.isError && <p className="mb-3 text-sm text-danger">{errorMessage(borrow.error)}</p>}
             <Button className="w-full" disabled={borrow.isPending} onClick={confirm}>
               {borrow.isPending ? "Unlocking…" : "Confirm & unlock"}
             </Button>

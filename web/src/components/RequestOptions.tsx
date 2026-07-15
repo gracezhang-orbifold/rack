@@ -49,15 +49,15 @@ export function RequestOptions({ itemTypeId, itemName }: { itemTypeId: string; i
     return (
       <div>
         <p className="mb-2 text-sm font-medium">Reserve {itemName}</p>
-        <label className="mb-2 block text-xs text-gray-500">Start date
+        <label className="mb-2 block text-xs text-muted">Start date
           <Input type="date" value={startDate} min={new Date(Date.now() + 86400000).toISOString().slice(0, 10)}
             onChange={(e) => setStartDate(e.target.value)} className="mt-1" />
         </label>
-        <p className="mb-1 text-xs text-gray-500">For how long?</p>
+        <p className="mb-1 text-xs text-muted">For how long?</p>
         <div className="mb-3 flex gap-2">
           {DAY_PRESETS.map((d) => (
             <button key={d} onClick={() => setDays(d)}
-              className={`min-h-[44px] flex-1 rounded-xl border ${days === d ? "border-gray-900 bg-gray-900 text-white" : "border-gray-300"}`}>
+              className={`min-h-[44px] flex-1 rounded-xl border ${days === d ? "border-primary bg-primary text-on-primary" : "border-edge"}`}>
               {d}d
             </button>
           ))}
@@ -73,25 +73,25 @@ export function RequestOptions({ itemTypeId, itemName }: { itemTypeId: string; i
   return (
     <div className="flex flex-col gap-2">
       {waitlist ? (
-        <div className="flex items-center justify-between rounded-xl bg-gray-100 p-3">
+        <div className="flex items-center justify-between rounded-xl bg-surface-2 p-3">
           <span className="text-sm">On waitlist — #{waitlist.position ?? "?"} in line</span>
-          <button className="text-sm text-gray-500 underline" disabled={busy} onClick={() => remove(waitlist.id)}>Leave</button>
+          <button className="text-sm text-muted underline" disabled={busy} onClick={() => remove(waitlist.id)}>Leave</button>
         </div>
       ) : (
         <Button variant="secondary" disabled={busy} onClick={() => add("waitlist")}>Join waitlist</Button>
       )}
       {notify ? (
-        <div className="flex items-center justify-between rounded-xl bg-gray-100 p-3">
+        <div className="flex items-center justify-between rounded-xl bg-surface-2 p-3">
           <span className="text-sm">You'll be emailed when it's available</span>
-          <button className="text-sm text-gray-500 underline" disabled={busy} onClick={() => remove(notify.id)}>Cancel</button>
+          <button className="text-sm text-muted underline" disabled={busy} onClick={() => remove(notify.id)}>Cancel</button>
         </div>
       ) : (
         <Button variant="secondary" disabled={busy} onClick={() => add("notify")}>Notify me when available</Button>
       )}
       {reservation ? (
-        <div className="flex items-center justify-between rounded-xl bg-gray-100 p-3">
+        <div className="flex items-center justify-between rounded-xl bg-surface-2 p-3">
           <span className="text-sm">Reserved {reservation.start_at ? fmt(reservation.start_at) : ""} · {reservation.days}d</span>
-          <button className="text-sm text-gray-500 underline" disabled={busy} onClick={() => remove(reservation.id)}>Cancel</button>
+          <button className="text-sm text-muted underline" disabled={busy} onClick={() => remove(reservation.id)}>Cancel</button>
         </div>
       ) : (
         <Button variant="secondary" disabled={busy} onClick={() => setReserving(true)}>Reserve for a future time</Button>

@@ -50,6 +50,6 @@ export function QrScanner({ onScan, onError }: { onScan: (text: string) => void;
   }, []);
 
   if (failed)
-    return <p className="rounded-xl bg-gray-100 p-3 text-center text-xs text-gray-500">Camera unavailable — type the asset ID below instead.</p>;
-  return <video ref={videoRef} className="h-48 w-full rounded-xl bg-gray-900 object-cover" muted playsInline />;
+    return <p className="rounded-xl bg-surface-2 p-3 text-center text-xs text-muted">Camera unavailable — type the asset ID below instead.</p>;
+  return <video ref={videoRef} className="h-48 w-full rounded-xl bg-black object-cover" muted playsInline />;
 }
