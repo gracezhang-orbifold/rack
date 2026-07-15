@@ -64,7 +64,7 @@ export function ServiceRequestScreen() {
             <div className="mt-3 flex gap-2">
               <Input placeholder="…or type the asset ID" value={manualId}
                 onChange={(e) => setManualId(e.target.value)} />
-              <Button variant="secondary" disabled={!parseAssetId(manualId)}
+              <Button variant="secondary" className="shrink-0 whitespace-nowrap" disabled={!parseAssetId(manualId)}
                 onClick={() => { setAssetId(parseAssetId(manualId)!); setScanError(null); }}>
                 Use ID
               </Button>
