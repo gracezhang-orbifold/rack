@@ -43,7 +43,7 @@ export default {
       animation: {
         "sheet-up": "sheet-up 0.22s ease-out",
         "modal-in": "modal-in 0.18s ease-out",
-        "fade-up": "fade-up 0.3s ease-out both",
+        "fade-up": "fade-up 0.3s ease-out",
         "fade-in": "fade-in 0.15s ease-out",
       },
     },

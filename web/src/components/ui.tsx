@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 export function Button({ variant = "primary", className = "", ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "secondary" | "danger" }) {
   const base = "min-h-[44px] px-4 rounded-xl font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-[background-color,transform] active:scale-[0.98]";
@@ -37,14 +38,17 @@ export function Spinner() {
 
 export function Sheet({ open, onClose, children }: { open: boolean; onClose: () => void; children: ReactNode }) {
   if (!open) return null;
-  return (
+  // Portal to <body>: screens animate with transforms, and a transformed
+  // ancestor would trap this fixed overlay inside the content column.
+  return createPortal(
     <div className="fixed inset-0 z-40 flex animate-fade-in items-end justify-center bg-black/60 md:items-center" onClick={onClose}>
       <div
         className="w-full max-w-md animate-sheet-up rounded-t-2xl bg-surface-2 p-5 pb-8 shadow-lg shadow-black/40 md:animate-modal-in md:rounded-2xl md:pb-5"
         role="dialog" onClick={(e) => e.stopPropagation()}>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -91,13 +95,15 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastCtx.Provider value={push}>
       {children}
+      {createPortal(
       <div className="fixed inset-x-0 bottom-20 z-50 flex flex-col items-center gap-2 px-4">
         {toasts.map((t) => (
           <div key={t.id} className={`w-full max-w-md animate-fade-up rounded-xl px-4 py-3 text-sm shadow-lg shadow-black/30 ${t.tone === "error" ? "bg-danger text-bg" : "bg-surface-2 text-text"}`}>
             {t.message}
           </div>
         ))}
-      </div>
+      </div>,
+      document.body)}
     </ToastCtx.Provider>
   );
 }
