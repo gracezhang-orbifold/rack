@@ -19,7 +19,7 @@ export default function App() {
     return (
       <div className="mx-auto max-w-md p-8 text-center">
         <h1 className="mb-2 text-lg font-semibold">Can't reach Rack</h1>
-        <p className="mb-4 text-sm text-gray-600">The server isn't responding. Check your connection.</p>
+        <p className="mb-4 text-sm text-muted">The server isn't responding. Check your connection.</p>
         <Button onClick={() => me.refetch()}>Retry</Button>
       </div>
     );

@@ -32,11 +32,11 @@ function ReminderSettingsCard() {
       onError: (e) => toast(errorMessage(e), "error"),
     });
   return (
-    <div className="mt-6 rounded-xl bg-white p-3 shadow-sm">
+    <div className="mt-6 rounded-xl bg-surface p-3 shadow-sm shadow-black/20">
       <p className="mb-2 text-sm font-medium">Email reminders</p>
-      <label className="mb-2 flex items-center justify-between text-sm text-gray-600">
+      <label className="mb-2 flex items-center justify-between text-sm text-muted">
         Heads-up before due
-        <select className="rounded-lg border border-gray-300 px-2 py-1"
+        <select className="rounded-lg border border-edge px-2 py-1"
           value={settings.data.remind_before_days} disabled={update.isPending}
           onChange={(e) => save({ remind_before_days: Number(e.target.value) })}>
           <option value={0}>Off</option>
@@ -46,9 +46,9 @@ function ReminderSettingsCard() {
           <option value={7}>1 week before</option>
         </select>
       </label>
-      <label className="flex items-center justify-between text-sm text-gray-600">
+      <label className="flex items-center justify-between text-sm text-muted">
         Overdue reminders
-        <select className="rounded-lg border border-gray-300 px-2 py-1"
+        <select className="rounded-lg border border-edge px-2 py-1"
           value={settings.data.overdue_reminder_every_days} disabled={update.isPending}
           onChange={(e) => save({ overdue_reminder_every_days: Number(e.target.value) })}>
           <option value={0}>Off</option>
@@ -57,7 +57,7 @@ function ReminderSettingsCard() {
           <option value={7}>Weekly</option>
         </select>
       </label>
-      <p className="mt-2 text-xs text-gray-400">Reminder emails go out at 9:00 AM.</p>
+      <p className="mt-2 text-xs text-muted/70">Reminder emails go out at 9:00 AM.</p>
     </div>
   );
 }
@@ -101,23 +101,23 @@ export function MyItemsScreen() {
       {questions.map((q) =>
         q.kind === "yes_no" ? (
           <div key={q.id}>
-            <p className="mb-1 text-sm text-gray-700">{q.label}</p>
+            <p className="mb-1 text-sm text-text">{q.label}</p>
             <div className="flex gap-2" role="group" aria-label={q.label}>
               {[true, false].map((v) => (
                 <button key={String(v)} type="button" onClick={() => setAnswer(q.id, v)}
                   aria-pressed={answers[q.id] === v}
-                  className={`min-h-[44px] flex-1 rounded-xl border ${answers[q.id] === v ? "border-gray-900 bg-gray-900 text-white" : "border-gray-300"}`}>
+                  className={`min-h-[44px] flex-1 rounded-xl border ${answers[q.id] === v ? "border-primary bg-primary text-on-primary" : "border-edge"}`}>
                   {v ? "Yes" : "No"}
                 </button>
               ))}
             </div>
           </div>
         ) : (
-          <label key={q.id} className="text-sm text-gray-700">
+          <label key={q.id} className="text-sm text-text">
             {q.label}
             <textarea rows={2} maxLength={500} value={(answers[q.id] as string) ?? ""}
               onChange={(e) => setAnswer(q.id, e.target.value)}
-              className="mt-1 w-full rounded-xl border border-gray-300 p-3 text-sm focus:border-gray-900 focus:outline-none" />
+              className="mt-1 w-full rounded-xl border border-edge p-3 text-sm focus:border-primary focus:outline-none" />
           </label>
         ))}
     </div>
@@ -170,7 +170,7 @@ export function MyItemsScreen() {
 
   const conditionFields = (
     <div className="mb-3">
-      <label className="flex items-center gap-2 text-sm text-gray-700">
+      <label className="flex items-center gap-2 text-sm text-text">
         <input type="checkbox" className="h-4 w-4" checked={damaged}
           onChange={(e) => setDamaged(e.target.checked)} />
         The item is damaged
@@ -178,7 +178,7 @@ export function MyItemsScreen() {
       {damaged && (
         <textarea rows={2} maxLength={500} value={note} onChange={(e) => setNote(e.target.value)}
           placeholder="Describe the damage (required)"
-          className="mt-2 w-full rounded-xl border border-gray-300 p-3 text-sm focus:border-gray-900 focus:outline-none" />
+          className="mt-2 w-full rounded-xl border border-edge p-3 text-sm focus:border-primary focus:outline-none" />
       )}
     </div>
   );
@@ -191,26 +191,26 @@ export function MyItemsScreen() {
   };
 
   if (borrows.isLoading) return <Spinner />;
-  if (borrows.isError) return <p className="p-4 text-sm text-gray-600">Couldn't load your items.</p>;
+  if (borrows.isError) return <p className="p-4 text-sm text-muted">Couldn't load your items.</p>;
   const { active, history } = borrows.data!;
 
   return (
-    <div className="py-3">
+    <div className="animate-fade-up py-3">
       <h2 className="mb-3 text-lg font-semibold">Your items</h2>
-      {active.length === 0 && <p className="text-sm text-gray-500">Nothing checked out.</p>}
-      <ul className="flex flex-col gap-2">
+      {active.length === 0 && <p className="text-sm text-muted">Nothing checked out.</p>}
+      <ul className="grid grid-cols-1 gap-2 md:grid-cols-2">
         {active.map((b) => (
-          <li key={b.session_id} className="flex items-center justify-between rounded-xl bg-white p-3 shadow-sm">
+          <li key={b.session_id} className="flex items-center justify-between rounded-xl bg-surface p-3 shadow-sm shadow-black/20">
             <div>
-              <p className="font-medium">{b.item_name}{b.asset_id ? <span className="font-mono text-xs text-gray-400"> · {b.asset_id}</span> : null}</p>
+              <p className="font-medium">{b.item_name}{b.asset_id ? <span className="font-mono text-xs text-muted/70"> · {b.asset_id}</span> : null}</p>
               {!b.unit_confirmed
                 ? <Badge tone="amber">Scan needed — confirm which unit you took</Badge>
                 : b.is_overdue
                   ? <Badge tone="red">Overdue — due {fmt(b.due_at)}</Badge>
-                  : <span className="text-xs text-gray-500">Due {fmt(b.due_at)}</span>}
+                  : <span className="text-xs text-muted">Due {fmt(b.due_at)}</span>}
             </div>
             <button aria-label={`More options for ${b.item_name}`}
-              className="min-h-[44px] min-w-[44px] rounded-xl text-xl font-bold text-gray-500 active:bg-gray-100"
+              className="min-h-[44px] min-w-[44px] rounded-xl text-xl font-bold text-muted active:bg-surface-2"
               onClick={() => open("menu", b)}>
               ⋯
             </button>
@@ -220,15 +220,15 @@ export function MyItemsScreen() {
 
       {(requests.data?.length ?? 0) > 0 && (
         <>
-          <h3 className="mb-2 mt-6 text-sm font-semibold text-gray-700">Your requests</h3>
+          <h3 className="mb-2 mt-6 text-sm font-semibold text-text">Your requests</h3>
           <ul className="flex flex-col gap-2">
             {requests.data!.map((r) => (
-              <li key={r.id} className="flex items-center justify-between rounded-xl bg-white p-3 shadow-sm">
+              <li key={r.id} className="flex items-center justify-between rounded-xl bg-surface p-3 shadow-sm shadow-black/20">
                 <div>
                   <p className="text-sm font-medium">{r.item_name}</p>
-                  <span className="text-xs text-gray-500">{requestLabel(r)}</span>
+                  <span className="text-xs text-muted">{requestLabel(r)}</span>
                 </div>
-                <button className="text-sm text-gray-500 underline" disabled={cancelRequest.isPending}
+                <button className="text-sm text-muted underline" disabled={cancelRequest.isPending}
                   onClick={() => cancelRequest.mutate(r.id, { onError: (e) => toast(errorMessage(e), "error") })}>
                   Cancel
                 </button>
@@ -240,18 +240,18 @@ export function MyItemsScreen() {
 
       <ReminderSettingsCard />
 
-      <button className="mt-6 text-sm text-gray-500 underline" onClick={() => setShowHistory((s) => !s)}>
+      <button className="mt-6 text-sm text-muted underline" onClick={() => setShowHistory((s) => !s)}>
         {showHistory ? "Hide history" : `History (${history.length})`}
       </button>
       {showHistory && (
         <ul className="mt-2 flex flex-col gap-2">
           {history.map((h) => (
-            <li key={h.session_id} className="text-sm text-gray-600">
+            <li key={h.session_id} className="text-sm text-muted">
               <div className="flex justify-between">
-                <span>{h.item_name}{h.asset_id ? <span className="font-mono text-xs text-gray-400"> · {h.asset_id}</span> : null}</span>
+                <span>{h.item_name}{h.asset_id ? <span className="font-mono text-xs text-muted/70"> · {h.asset_id}</span> : null}</span>
                 <span>{h.status}</span>
               </div>
-              <p className="text-xs text-gray-400">
+              <p className="text-xs text-muted/70">
                 Borrowed {fmt(h.checked_out_at)}{h.returned_at ? ` — returned ${fmt(h.returned_at)}` : ""}
               </p>
             </li>
@@ -263,7 +263,7 @@ export function MyItemsScreen() {
         {done ? (
           <div className="text-center">
             <h3 className="mb-1 text-lg font-semibold">{damaged ? "Damage reported" : "Cabinet unlocked"}</h3>
-            <p className="mb-5 text-sm text-gray-600">
+            <p className="mb-5 text-sm text-muted">
               {damaged
                 ? "Put the item back and close the door — the admins have been notified and the unit is marked for repair."
                 : ret.data?.flagged
@@ -275,7 +275,7 @@ export function MyItemsScreen() {
         ) : sheet?.kind === "menu" ? (
           <div>
             <h3 className="mb-1 text-lg font-semibold">{sheet.b.item_name}</h3>
-            <p className="mb-3 text-sm text-gray-500">
+            <p className="mb-3 text-sm text-muted">
               {sheet.b.asset_id ? <span className="font-mono">{sheet.b.asset_id} · </span> : null}
               Due {fmt(sheet.b.due_at)}
             </p>
@@ -290,13 +290,13 @@ export function MyItemsScreen() {
         ) : sheet?.kind === "confirm" ? (
           <div>
             <h3 className="mb-1 text-lg font-semibold">Which {sheet.b.item_name} did you take?</h3>
-            <p className="mb-3 text-sm text-gray-500">
+            <p className="mb-3 text-sm text-muted">
               Scan the QR label on the item in your hands (or type its ID). You can't borrow anything
               else until this checkout is confirmed.
             </p>
             <QrScanner key={scanKey} onScan={onDecoded} />
             <div className="mt-3 flex gap-2">
-              <input className="min-h-[44px] w-full rounded-xl border border-gray-300 px-3 focus:border-gray-900 focus:outline-none"
+              <input className="min-h-[44px] w-full rounded-xl border border-edge px-3 focus:border-primary focus:outline-none"
                 placeholder="…or type the asset ID" value={manualId}
                 onChange={(e) => setManualId(e.target.value)} />
               <Button variant="secondary" disabled={!parseAssetId(manualId) || confirmUnit.isPending}
@@ -304,16 +304,16 @@ export function MyItemsScreen() {
                 {confirmUnit.isPending ? "…" : "Confirm"}
               </Button>
             </div>
-            {scanError && <p className="mt-2 text-sm text-red-600">{scanError}</p>}
+            {scanError && <p className="mt-2 text-sm text-danger">{scanError}</p>}
           </div>
         ) : sheet?.kind === "extend" ? (
           <div>
             <h3 className="mb-1 text-lg font-semibold">Extend {sheet.b.item_name}</h3>
-            <p className="mb-4 text-sm text-gray-500">Currently due {fmt(sheet.b.due_at)}. Extend by how long?</p>
+            <p className="mb-4 text-sm text-muted">Currently due {fmt(sheet.b.due_at)}. Extend by how long?</p>
             <div className="mb-4 flex gap-2">
               {EXTEND_PRESETS.map((d) => (
                 <button key={d} onClick={() => setDays(d)}
-                  className={`min-h-[44px] flex-1 rounded-xl border ${days === d ? "border-gray-900 bg-gray-900 text-white" : "border-gray-300"}`}>
+                  className={`min-h-[44px] flex-1 rounded-xl border ${days === d ? "border-primary bg-primary text-on-primary" : "border-edge"}`}>
                   +{d}d
                 </button>
               ))}
@@ -325,7 +325,7 @@ export function MyItemsScreen() {
         ) : sheet?.kind === "return" && sheet.b.asset_id ? (
           <div>
             <h3 className="mb-1 text-lg font-semibold">Return {sheet.b.item_name}?</h3>
-            <p className="mb-3 text-sm text-gray-500">
+            <p className="mb-3 text-sm text-muted">
               Scan the label on the item (<span className="font-mono">{sheet.b.asset_id}</span>) to confirm,
               then the cabinet will unlock.
             </p>
@@ -333,7 +333,7 @@ export function MyItemsScreen() {
             {conditionFields}
             <QrScanner key={scanKey} onScan={onDecoded} />
             <div className="mt-3 flex gap-2">
-              <input className="min-h-[44px] w-full rounded-xl border border-gray-300 px-3 focus:border-gray-900 focus:outline-none"
+              <input className="min-h-[44px] w-full rounded-xl border border-edge px-3 focus:border-primary focus:outline-none"
                 placeholder="…or type the asset ID" value={manualId}
                 onChange={(e) => setManualId(e.target.value)} />
               <Button variant="secondary" disabled={!parseAssetId(manualId) || returnIncomplete || ret.isPending}
@@ -341,15 +341,15 @@ export function MyItemsScreen() {
                 {ret.isPending ? "…" : "Confirm"}
               </Button>
             </div>
-            {scanError && <p className="mt-2 text-sm text-red-600">{scanError}</p>}
+            {scanError && <p className="mt-2 text-sm text-danger">{scanError}</p>}
           </div>
         ) : sheet ? (
           <div>
             <h3 className="mb-1 text-lg font-semibold">Return {sheet.b.item_name}?</h3>
-            <p className="mb-4 text-sm text-gray-500">The cabinet will unlock so you can put it back.</p>
+            <p className="mb-4 text-sm text-muted">The cabinet will unlock so you can put it back.</p>
             {questionFields}
             {conditionFields}
-            {ret.isError && <p className="mb-3 text-sm text-red-600">{errorMessage(ret.error)}</p>}
+            {ret.isError && <p className="mb-3 text-sm text-danger">{errorMessage(ret.error)}</p>}
             <Button className="w-full" disabled={ret.isPending || returnIncomplete} onClick={() => doReturn()}>
               {ret.isPending ? "Unlocking…" : "Confirm & unlock"}
             </Button>

@@ -21,7 +21,7 @@ export function AuthScreen() {
   return (
     <div className="mx-auto flex min-h-full max-w-md flex-col justify-center p-6">
       <h1 className="mb-1 text-2xl font-bold">Rack</h1>
-      <p className="mb-6 text-sm text-gray-500">{mode === "login" ? "Sign in to borrow equipment." : "Create your account."}</p>
+      <p className="mb-6 text-sm text-muted">{mode === "login" ? "Sign in to borrow equipment." : "Create your account."}</p>
       <form onSubmit={submit} className="flex flex-col gap-3">
         {mode === "signup" && (
           <label className="text-sm">Name
@@ -38,8 +38,8 @@ export function AuthScreen() {
           {mode === "login" ? "Sign in" : "Create account"}
         </Button>
       </form>
-      {active.isError && <p className="mt-3 text-sm text-red-600">{errorMessage(active.error)}</p>}
-      <button className="mt-6 text-sm text-gray-500 underline" onClick={() => setMode(mode === "login" ? "signup" : "login")}>
+      {active.isError && <p className="mt-3 text-sm text-danger">{errorMessage(active.error)}</p>}
+      <button className="mt-6 text-sm text-muted underline" onClick={() => setMode(mode === "login" ? "signup" : "login")}>
         {mode === "login" ? "Create account" : "Have an account? Sign in"}
       </button>
     </div>

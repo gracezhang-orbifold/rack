@@ -12,20 +12,20 @@ function fmt(d: string) { return new Date(d).toLocaleDateString("en-US", { dateS
 // Current and previous borrowers of one unit, loaded when the row expands.
 function UnitHistory({ unitId }: { unitId: string }) {
   const history = useUnitHistory(unitId);
-  if (history.isLoading) return <p className="py-1 text-xs text-gray-400">Loading history…</p>;
-  if (history.isError) return <p className="py-1 text-xs text-red-600">Couldn't load history.</p>;
-  if (history.data!.length === 0) return <p className="py-1 text-xs text-gray-400">Never borrowed.</p>;
+  if (history.isLoading) return <p className="py-1 text-xs text-muted/70">Loading history…</p>;
+  if (history.isError) return <p className="py-1 text-xs text-danger">Couldn't load history.</p>;
+  if (history.data!.length === 0) return <p className="py-1 text-xs text-muted/70">Never borrowed.</p>;
   return (
     <ul className="flex flex-col gap-1 py-1">
       {history.data!.map((s) => (
-        <li key={s.session_id} className="text-xs text-gray-600">
+        <li key={s.session_id} className="text-xs text-muted">
           <span className="font-medium">{s.full_name ?? s.email}</span>
-          {s.full_name && <span className="text-gray-400"> · {s.email}</span>}
+          {s.full_name && <span className="text-muted/70"> · {s.email}</span>}
           {s.status === "active"
-            ? <span className="text-amber-700"> — has it since {fmt(s.checked_out_at)}</span>
+            ? <span className="text-warning"> — has it since {fmt(s.checked_out_at)}</span>
             : <span> — {fmt(s.checked_out_at)} → {s.returned_at ? fmt(s.returned_at) : s.status}</span>}
           {s.return_damaged && (
-            <p className="text-red-600">Returned damaged{s.return_note ? `: ${s.return_note}` : ""}</p>
+            <p className="text-danger">Returned damaged{s.return_note ? `: ${s.return_note}` : ""}</p>
           )}
         </li>
       ))}
@@ -63,28 +63,28 @@ function ReturnQuestionsEditor({ type }: { type: AdminItemType }) {
     });
 
   return (
-    <div className="mt-2 rounded-lg bg-gray-50 p-2">
+    <div className="mt-2 rounded-lg bg-surface-2 p-2">
       <ul className="flex flex-col gap-1">
         {draft.map((q, i) => (
-          <li key={q.id} className="flex items-center justify-between text-sm text-gray-700">
+          <li key={q.id} className="flex items-center justify-between text-sm text-text">
             <span>
               {q.label}
-              <span className="ml-1 text-xs text-gray-400">{q.kind === "yes_no" ? "yes/no" : "text"}{q.flag_if_yes ? " · flags" : ""}</span>
+              <span className="ml-1 text-xs text-muted/70">{q.kind === "yes_no" ? "yes/no" : "text"}{q.flag_if_yes ? " · flags" : ""}</span>
             </span>
-            <button className="text-xs text-gray-500 underline"
+            <button className="text-xs text-muted underline"
               onClick={() => setDraft(draft.filter((_, j) => j !== i))}>
               Remove
             </button>
           </li>
         ))}
-        {draft.length === 0 && <li className="text-xs text-gray-400">No return questions yet.</li>}
+        {draft.length === 0 && <li className="text-xs text-muted/70">No return questions yet.</li>}
       </ul>
       <div className="mt-2 flex flex-col gap-2">
         <Input placeholder="Question label" value={label} onChange={(e) => setLabel(e.target.value)} />
-        <div className="flex items-center gap-3 text-sm text-gray-600">
+        <div className="flex items-center gap-3 text-sm text-muted">
           <label className="flex items-center gap-1">
             Answer type
-            <select className="rounded-lg border border-gray-300 px-2 py-1" value={kind}
+            <select className="rounded-lg border border-edge px-2 py-1" value={kind}
               onChange={(e) => setKind(e.target.value as "text" | "yes_no")}>
               <option value="text">text</option>
               <option value="yes_no">yes/no</option>
@@ -120,18 +120,18 @@ function AddAccessoryKit({ type }: { type: AdminItemType }) {
 
   if (!open) {
     return (
-      <button className="mb-2 text-xs text-gray-500 underline" onClick={() => setOpen(true)}>
+      <button className="mb-2 text-xs text-muted underline" onClick={() => setOpen(true)}>
         + Add accessory kit
       </button>
     );
   }
   return (
-    <div className="mb-2 flex flex-col gap-2 rounded-lg bg-gray-50 p-2">
+    <div className="mb-2 flex flex-col gap-2 rounded-lg bg-surface-2 p-2">
       <Input aria-label="Kit name" value={name} onChange={(e) => setName(e.target.value)} />
-      <label className="flex items-center justify-between text-xs text-gray-500">
+      <label className="flex items-center justify-between text-xs text-muted">
         Units
         <input type="number" min={1} max={100} value={count} aria-label="Kit units"
-          className="w-20 rounded-lg border border-gray-300 px-2 py-1 text-sm"
+          className="w-20 rounded-lg border border-edge px-2 py-1 text-sm"
           onChange={(e) => setCount(Number(e.target.value))} />
       </label>
       <div className="flex gap-2">
@@ -162,7 +162,7 @@ export function AdminInventoryScreen() {
   const [q, setQ] = useState("");
 
   if (inventory.isLoading) return <Spinner />;
-  if (inventory.isError) return <p className="p-4 text-sm text-gray-600">Couldn't load inventory.</p>;
+  if (inventory.isError) return <p className="p-4 text-sm text-muted">Couldn't load inventory.</p>;
 
   const categories = [...new Set(inventory.data!.map((t) => t.category))].sort();
   // An item type is a duplicate when both name and category already exist.
@@ -202,16 +202,16 @@ export function AdminInventoryScreen() {
     });
 
   return (
-    <div className="py-3">
+    <div className="animate-fade-up py-3">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-lg font-semibold">Inventory</h2>
         <div className="flex gap-3">
-          <Link to="/admin/labels" className="text-sm text-gray-500 underline">QR labels</Link>
-          <Link to="/admin" className="text-sm text-gray-500 underline">Overview</Link>
+          <Link to="/admin/labels" className="text-sm text-muted underline">QR labels</Link>
+          <Link to="/admin" className="text-sm text-muted underline">Overview</Link>
         </div>
       </div>
 
-      <form onSubmit={addType} className="mb-5 flex flex-col gap-2 rounded-xl bg-white p-3 shadow-sm">
+      <form onSubmit={addType} className="mb-5 flex flex-col gap-2 rounded-xl bg-surface p-3 shadow-sm shadow-black/20">
         <p className="text-sm font-medium">Add item type</p>
         <Input placeholder="Name" value={newName} onChange={(e) => setNewName(e.target.value)} />
         <Input placeholder="Category" list="category-options" value={newCategory}
@@ -220,7 +220,7 @@ export function AdminInventoryScreen() {
           {categories.map((c) => <option key={c} value={c} />)}
         </datalist>
         {duplicate && (
-          <div className="rounded-xl bg-amber-100 p-3 text-sm text-amber-800">
+          <div className="rounded-xl bg-warning/15 p-3 text-sm text-warning">
             <p className="mb-2">
               <span className="font-medium">{duplicate.name}</span> already exists in{" "}
               <span className="font-medium">{duplicate.category}</span> — change the name or
@@ -236,25 +236,25 @@ export function AdminInventoryScreen() {
       </form>
 
       <Input placeholder="Search inventory…" value={q} onChange={(e) => setQ(e.target.value)} className="mb-3" />
-      {visible.length === 0 && <p className="mt-6 text-center text-sm text-gray-500">No matches.</p>}
-      <ul className="flex flex-col gap-3">
+      {visible.length === 0 && <p className="mt-6 text-center text-sm text-muted">No matches.</p>}
+      <ul className="grid grid-cols-1 items-start gap-3 md:grid-cols-2">
         {visible.map((t) => (
-          <li key={t.id} className="rounded-xl bg-white p-3 shadow-sm">
+          <li key={t.id} className="rounded-xl bg-surface p-3 shadow-sm shadow-black/20">
             <div className="mb-2 flex items-center justify-between">
               <div>
                 <p className="font-medium">{t.name}</p>
-                <p className="text-xs text-gray-400">{t.category}{t.notes ? ` · ${t.notes}` : ""}</p>
+                <p className="text-xs text-muted/70">{t.category}{t.notes ? ` · ${t.notes}` : ""}</p>
               </div>
               <Button variant="secondary" onClick={() => addUnit(t.id)} disabled={createUnits.isPending}>+ Unit</Button>
             </div>
-            <button className="mb-2 text-xs text-gray-500 underline"
+            <button className="mb-2 text-xs text-muted underline"
               onClick={() => setEditQuestions(editQuestions === t.id ? null : t.id)}>
               Return questions ({t.return_questions.length})
             </button>
             {editQuestions === t.id && <ReturnQuestionsEditor type={t} />}
-            <label className="mb-2 flex items-center justify-between text-xs text-gray-500">
+            <label className="mb-2 flex items-center justify-between gap-2 whitespace-nowrap text-xs text-muted">
               Accessory kit
-              <select className="rounded-lg border border-gray-300 px-2 py-1 text-sm"
+              <select className="rounded-lg border border-edge px-2 py-1 text-sm"
                 value={t.accessory_type_id ?? ""} disabled={updateItemType.isPending}
                 onChange={(e) => setAccessory(t.id, e.target.value || null)}>
                 <option value="">None</option>
@@ -268,11 +268,11 @@ export function AdminInventoryScreen() {
               {t.units.map((u) => (
                 <li key={u.id} className="text-sm">
                   <div className="flex items-center justify-between">
-                    <button className="text-left text-gray-600 underline decoration-dotted"
+                    <button className="text-left text-muted underline decoration-dotted"
                       onClick={() => setExpandedUnit(expandedUnit === u.id ? null : u.id)}>
                       {u.asset_id ?? u.id.slice(0, 8)}
                     </button>
-                    <select className="rounded-lg border border-gray-300 px-2 py-1" defaultValue={u.status}
+                    <select className="rounded-lg border border-edge px-2 py-1" defaultValue={u.status}
                       onChange={(e) => setStatus(u.id, e.target.value)}>
                       {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
                     </select>
@@ -280,7 +280,7 @@ export function AdminInventoryScreen() {
                   {expandedUnit === u.id && <UnitHistory unitId={u.id} />}
                 </li>
               ))}
-              {t.units.length === 0 && <li className="text-xs text-gray-400">No units yet.</li>}
+              {t.units.length === 0 && <li className="text-xs text-muted/70">No units yet.</li>}
             </ul>
           </li>
         ))}

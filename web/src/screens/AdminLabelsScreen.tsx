@@ -43,7 +43,7 @@ export function AdminLabelsScreen() {
   const [sortBy, setSortBy] = useState<SortBy>("category");
 
   if (inventory.isLoading) return <Spinner />;
-  if (inventory.isError) return <p className="p-4 text-sm text-gray-600">Couldn't load inventory.</p>;
+  if (inventory.isError) return <p className="p-4 text-sm text-muted">Couldn't load inventory.</p>;
 
   // API order is category → item name → unit created_at; that's the
   // "category" sort. The others re-sort the flat list.
@@ -68,7 +68,7 @@ export function AdminLabelsScreen() {
     <div className="py-3">
       <div className="mb-3 flex items-center justify-between print:hidden">
         <h2 className="text-lg font-semibold">QR labels</h2>
-        <Link to="/admin/inventory" className="text-sm text-gray-500 underline">Inventory</Link>
+        <Link to="/admin/inventory" className="text-sm text-muted underline">Inventory</Link>
       </div>
 
       <div className="mb-4 flex flex-col gap-2 print:hidden">
@@ -85,9 +85,9 @@ export function AdminLabelsScreen() {
           Print {selectedCount} label{selectedCount === 1 ? "" : "s"}
         </Button>
         {units.length > 0 && (
-          <label className="flex items-center justify-between text-sm text-gray-600">
+          <label className="flex items-center justify-between text-sm text-muted">
             Sort by
-            <select className="rounded-lg border border-gray-300 px-2 py-1"
+            <select className="rounded-lg border border-edge px-2 py-1"
               value={sortBy} onChange={(e) => setSortBy(e.target.value as SortBy)}>
               <option value="category">Category</option>
               <option value="name">Item name</option>
@@ -98,20 +98,20 @@ export function AdminLabelsScreen() {
         )}
         {units.length > 0 && (
           <div className="flex items-center justify-between text-sm">
-            <span className="text-gray-500">{selectedCount}/{units.length} selected — tap labels to toggle</span>
+            <span className="text-muted">{selectedCount}/{units.length} selected — tap labels to toggle</span>
             {selectedCount < units.length
-              ? <button className="text-gray-500 underline" onClick={() => setDeselected(new Set())}>Select all</button>
-              : <button className="text-gray-500 underline" onClick={() => setDeselected(new Set(units.map((u) => u.asset_id)))}>Clear</button>}
+              ? <button className="text-muted underline" onClick={() => setDeselected(new Set())}>Select all</button>
+              : <button className="text-muted underline" onClick={() => setDeselected(new Set(units.map((u) => u.asset_id)))}>Clear</button>}
           </div>
         )}
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-muted">
           Print, cut along the dashed lines, and tape each label to its item.
           Scan a label from Browse → Scan label to check out that exact unit.
         </p>
       </div>
 
       {units.length === 0 ? (
-        <p className="text-sm text-gray-500">No units have asset IDs yet.</p>
+        <p className="text-sm text-muted">No units have asset IDs yet.</p>
       ) : (
         // Print is a fixed 12-per-row grid; on screen the labels just wrap.
         <ul className="flex flex-wrap gap-2 print:grid print:grid-cols-12 print:gap-1">
@@ -119,10 +119,10 @@ export function AdminLabelsScreen() {
             const off = deselected.has(u.asset_id);
             return (
               <li key={u.asset_id} onClick={() => toggle(u.asset_id)} aria-selected={!off}
-                className={`flex w-[60px] cursor-pointer break-inside-avoid flex-col items-center gap-0.5 border border-dashed p-0.5 text-center print:w-auto ${off ? "border-gray-200 opacity-40 print:hidden" : "border-gray-400"}`}>
+                className={`flex w-[60px] cursor-pointer break-inside-avoid flex-col items-center gap-0.5 border border-dashed p-0.5 text-center print:w-auto print:bg-white ${off ? "border-edge/60 opacity-40 print:hidden" : "border-edge print:border-gray-400"}`}>
                 <QrSvg value={u.asset_id} />
-                <p className="whitespace-nowrap font-mono text-[9px] font-bold leading-none">{u.asset_id}</p>
-                <p className="text-[9px] leading-tight text-gray-600">{u.name}</p>
+                <p className="whitespace-nowrap font-mono text-[9px] font-bold leading-none print:text-black">{u.asset_id}</p>
+                <p className="text-[9px] leading-tight text-muted print:text-black">{u.name}</p>
               </li>
             );
           })}
