@@ -159,12 +159,27 @@ check "kit unit count matches item" "3" "$(sql "select count(*) from item_units 
 check "item linked to new kit" "$AKID" "$(sql "select accessory_type_id from item_types where id = '$SOLO';")"
 check "second kit rejected" "409" "$(curl -s -o /dev/null -w '%{http_code}' -b "$AJ" -X POST "$API/api/admin/item-types/$SOLO/accessory-kit" -H 'Content-Type: application/json' -d '{}')"
 
+echo "== Service requests"
+curl -sb "$AJ" -X POST "$API/api/admin/assign-asset-ids" >/dev/null
+SRASSET=$(sql "select asset_id from item_units where asset_id is not null limit 1;")
+check "missing description is 400" "400" "$(curl -s -o /dev/null -w '%{http_code}' -b "$UJ" "$API/api/service-requests" -H 'Content-Type: application/json' -d "{\"asset_id\":\"$SRASSET\"}")"
+check "unknown asset id is 404" "404" "$(curl -s -o /dev/null -w '%{http_code}' -b "$UJ" "$API/api/service-requests" -H 'Content-Type: application/json' -d '{"asset_id":"RACK-ZZZZ","description":"smoke: does not power on"}')"
+SR=$(curl -sb "$UJ" "$API/api/service-requests" -H 'Content-Type: application/json' -d "{\"asset_id\":\"$SRASSET\",\"description\":\"smoke: does not power on\"}")
+SRID=$(echo "$SR" | jqv id)
+check "raise returns open" "open" "$(echo "$SR" | jqv status)"
+check "mine list has 1" "1" "$(curl -sb "$UJ" "$API/api/service-requests" | jqv '')"
+check "admin open list has 1" "1" "$(curl -sb "$AJ" "$API/api/admin/service-requests" | jqv '')"
+check "resolve succeeds" "resolved" "$(curl -sb "$AJ" -X POST "$API/api/admin/service-requests/$SRID/resolve" | jqv status)"
+check "re-resolve is 409" "409" "$(curl -s -o /dev/null -w '%{http_code}' -b "$AJ" -X POST "$API/api/admin/service-requests/$SRID/resolve")"
+check "admin open list empty after resolve" "0" "$(curl -sb "$AJ" "$API/api/admin/service-requests" | jqv '')"
+
 echo "== Cleanup"
 # Delete every 'Smoke *' type this run created via the admin API, so the dev
 # DB (and the admin UI's dropdowns) don't accumulate test litter. Cascade by
 # hand — the FKs are NO ACTION: events -> sessions -> requests -> units ->
 # types, with accessory links to smoke types nulled first.
 sql "
+  delete from service_requests;
   delete from device_events where borrow_session_id in (
     select s.id from borrow_sessions s
     join item_units u on u.id = s.item_unit_id
