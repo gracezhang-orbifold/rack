@@ -52,6 +52,7 @@ export interface ActiveBorrow {
   session_id: string; item_name: string; category: string; asset_id: string | null;
   checked_out_at: string; due_at: string; is_overdue: boolean; unit_confirmed: boolean;
   return_questions: ReturnQuestion[];
+  draft_answers: ReturnAnswers | null;
 }
 export interface HistoryRow {
   session_id: string; item_name: string; asset_id: string | null; status: string;
@@ -88,4 +89,13 @@ export interface AdminUnit {
 export interface AdminItemType {
   id: string; name: string; category: string; notes: string | null;
   return_questions: ReturnQuestion[]; units: AdminUnit[]; accessory_type_id: string | null;
+}
+
+export interface ServiceRequest {
+  id: string; description: string; status: "open" | "resolved";
+  created_at: string; resolved_at?: string | null;
+  asset_id: string; item_name: string;
+}
+export interface AdminServiceRequest extends ServiceRequest {
+  item_unit_id: string; unit_status: UnitStatus; email: string; full_name: string | null;
 }

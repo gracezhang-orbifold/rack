@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { it, expect, vi, beforeEach } from "vitest";
@@ -122,4 +122,63 @@ it("asks return questions and blocks until every yes/no is answered", async () =
   expect(JSON.parse((call![1] as RequestInit).body as string)).toEqual({
     session_id: "s1", answers: { q1: "beach shoot raws", q2: true },
   });
+});
+
+it("saves draft answers from the menu without returning", async () => {
+  const withQuestions = {
+    ...DATA,
+    active: [{ ...DATA.active[0], is_overdue: false, draft_answers: null, return_questions: [
+      { id: "q1", label: "What's on the card?", kind: "text" },
+      { id: "q2", label: "Important — must not be wiped?", kind: "yes_no", flag_if_yes: true },
+    ] }],
+  };
+  const f = vi.fn().mockImplementation(async (url: RequestInfo | URL) => {
+    const path = String(url);
+    if (path.endsWith("/api/borrow/s1/draft-answers"))
+      return { ok: true, status: 200, json: async () => ({ session_id: "s1", saved: true }) };
+    if (path.endsWith("/api/my-borrows")) return { ok: true, status: 200, json: async () => withQuestions };
+    return { ok: true, status: 200, json: async () => [] };
+  });
+  vi.stubGlobal("fetch", f);
+  wrap();
+
+  await userEvent.click(await screen.findByRole("button", { name: /more options/i }));
+  await userEvent.click(await screen.findByRole("button", { name: "Answer return questions" }));
+  await userEvent.type(screen.getByLabelText(/what's on the card/i), "beach shoot raws");
+  await userEvent.click(screen.getByRole("button", { name: "Save answers" }));
+
+  await waitFor(() => {
+    const call = f.mock.calls.find(([u]) => String(u).endsWith("/api/borrow/s1/draft-answers"));
+    expect(call).toBeTruthy();
+    expect((call![1] as RequestInit).method).toBe("PUT");
+    expect(JSON.parse((call![1] as RequestInit).body as string)).toEqual({
+      answers: { q1: "beach shoot raws" },
+    });
+  });
+});
+
+it("prefills the return sheet from a saved draft", async () => {
+  const withDraft = {
+    ...DATA,
+    active: [{ ...DATA.active[0], is_overdue: false,
+      draft_answers: { q1: "beach shoot raws", q2: true },
+      return_questions: [
+        { id: "q1", label: "What's on the card?", kind: "text" },
+        { id: "q2", label: "Important — must not be wiped?", kind: "yes_no", flag_if_yes: true },
+      ] }],
+  };
+  const f = vi.fn().mockImplementation(async (url: RequestInfo | URL) => {
+    const path = String(url);
+    if (path.endsWith("/api/my-borrows")) return { ok: true, status: 200, json: async () => withDraft };
+    return { ok: true, status: 200, json: async () => [] };
+  });
+  vi.stubGlobal("fetch", f);
+  wrap();
+
+  await userEvent.click(await screen.findByRole("button", { name: /more options/i }));
+  await userEvent.click(await screen.findByRole("button", { name: "Return" }));
+  // Draft answers arrive prefilled: text filled in, Yes pressed, submit enabled.
+  expect(await screen.findByLabelText(/what's on the card/i)).toHaveValue("beach shoot raws");
+  expect(screen.getByRole("button", { name: "Yes" })).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByRole("button", { name: /confirm & unlock/i })).toBeEnabled();
 });

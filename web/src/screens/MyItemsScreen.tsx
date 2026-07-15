@@ -1,6 +1,6 @@
 import { useState } from "react";
 import {
-  useCancelRequest, useConfirmBorrow, useExtend, useMyBorrows, useMyRequests, useReturn,
+  useConfirmBorrow, useExtend, useMyBorrows, useReturn, useSaveDraftAnswers,
   useSettings, useUpdateSettings,
 } from "../hooks/queries";
 import { Badge, Button, Sheet, Spinner, useToast } from "../components/ui";
@@ -8,17 +8,11 @@ import { QrScanner } from "../components/QrScanner";
 import { errorMessage } from "../lib/borrowResult";
 import { parseAssetId } from "../lib/scan";
 import { ApiError } from "../lib/api";
-import type { ActiveBorrow, ItemRequest, ReturnAnswers } from "../lib/types";
+import type { ActiveBorrow, ReturnAnswers } from "../lib/types";
 
 const EXTEND_PRESETS = [1, 3, 7, 14];
 
 function fmt(d: string) { return new Date(d).toLocaleDateString("en-US", { dateStyle: "medium" }); }
-
-function requestLabel(r: ItemRequest) {
-  if (r.kind === "waitlist") return `Waitlist — #${r.position ?? "?"} in line`;
-  if (r.kind === "notify") return "Email when available";
-  return `Reserved ${r.start_at ? fmt(r.start_at) : ""} · ${r.days}d`;
-}
 
 // Reminder emails: heads-up N days before due, overdue nag cadence.
 function ReminderSettingsCard() {
@@ -64,13 +58,12 @@ function ReminderSettingsCard() {
 
 export function MyItemsScreen() {
   const borrows = useMyBorrows();
-  const requests = useMyRequests();
-  const cancelRequest = useCancelRequest();
   const ret = useReturn();
+  const saveDraft = useSaveDraftAnswers();
   const extend = useExtend();
   const confirmUnit = useConfirmBorrow();
   const toast = useToast();
-  const [sheet, setSheet] = useState<{ kind: "menu" | "return" | "extend" | "confirm"; b: ActiveBorrow } | null>(null);
+  const [sheet, setSheet] = useState<{ kind: "menu" | "return" | "extend" | "confirm" | "questions"; b: ActiveBorrow } | null>(null);
   const [done, setDone] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [days, setDays] = useState(7);
@@ -81,10 +74,13 @@ export function MyItemsScreen() {
   const [note, setNote] = useState("");
   const [answers, setAnswers] = useState<ReturnAnswers>({});
 
-  const open = (kind: "menu" | "return" | "extend" | "confirm", b: ActiveBorrow) => {
+  const open = (kind: "menu" | "return" | "extend" | "confirm" | "questions", b: ActiveBorrow) => {
     setSheet({ kind, b }); setDone(false); setDays(7);
     setManualId(""); setScanError(null);
-    setDamaged(false); setNote(""); setAnswers({});
+    setDamaged(false); setNote("");
+    // Returning (or pre-answering) starts from any saved draft, so answers
+    // only need confirming instead of retyping.
+    setAnswers(kind === "return" || kind === "questions" ? ((b.draft_answers as ReturnAnswers) ?? {}) : {});
     ret.reset(); extend.reset(); confirmUnit.reset();
   };
   const close = () => { setSheet(null); setDone(false); };
@@ -218,26 +214,6 @@ export function MyItemsScreen() {
         ))}
       </ul>
 
-      {(requests.data?.length ?? 0) > 0 && (
-        <>
-          <h3 className="mb-2 mt-6 text-sm font-semibold text-text">Your requests</h3>
-          <ul className="flex flex-col gap-2">
-            {requests.data!.map((r) => (
-              <li key={r.id} className="flex items-center justify-between rounded-xl bg-surface p-3 shadow-sm shadow-black/20">
-                <div>
-                  <p className="text-sm font-medium">{r.item_name}</p>
-                  <span className="text-xs text-muted">{requestLabel(r)}</span>
-                </div>
-                <button className="text-sm text-muted underline" disabled={cancelRequest.isPending}
-                  onClick={() => cancelRequest.mutate(r.id, { onError: (e) => toast(errorMessage(e), "error") })}>
-                  Cancel
-                </button>
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
-
       <ReminderSettingsCard />
 
       <button className="mt-6 text-sm text-muted underline" onClick={() => setShowHistory((s) => !s)}>
@@ -284,6 +260,9 @@ export function MyItemsScreen() {
                 <Button onClick={() => open("confirm", sheet.b)}>Scan ID</Button>
               )}
               <Button variant="secondary" onClick={() => open("return", sheet.b)}>Return</Button>
+              {(sheet.b.return_questions?.length ?? 0) > 0 && (
+                <Button variant="secondary" onClick={() => open("questions", sheet.b)}>Answer return questions</Button>
+              )}
               <Button variant="secondary" onClick={() => open("extend", sheet.b)}>Extend deadline</Button>
             </div>
           </div>
@@ -305,6 +284,22 @@ export function MyItemsScreen() {
               </Button>
             </div>
             {scanError && <p className="mt-2 text-sm text-danger">{scanError}</p>}
+          </div>
+        ) : sheet?.kind === "questions" ? (
+          <div>
+            <h3 className="mb-1 text-lg font-semibold">Return questions — {sheet.b.item_name}</h3>
+            <p className="mb-3 text-sm text-muted">
+              Answer now, return later: your answers are saved and prefilled when you return the item.
+              Partial answers are fine.
+            </p>
+            {questionFields}
+            <Button className="w-full" disabled={saveDraft.isPending}
+              onClick={() => saveDraft.mutate({ session_id: sheet.b.session_id, answers }, {
+                onSuccess: () => { toast("Answers saved — they'll be prefilled at return."); close(); },
+                onError: (e) => toast(e instanceof ApiError ? e.message : errorMessage(e), "error"),
+              })}>
+              {saveDraft.isPending ? "Saving…" : "Save answers"}
+            </Button>
           </div>
         ) : sheet?.kind === "extend" ? (
           <div>
