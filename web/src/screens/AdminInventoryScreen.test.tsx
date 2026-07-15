@@ -75,7 +75,7 @@ describe("AdminInventoryScreen (Total Assets table)", () => {
     expect(screen.getByText("MacBook Air")).toBeInTheDocument();
   });
 
-  it("manage-type sheet adds return questions on the type", async () => {
+  it("manage-type sheet stages return questions and applies them on Done", async () => {
     const f = stubFetch((path, init) => {
       if (path.endsWith("/api/admin/item-types/t1") && init?.method === "PATCH") return { ...INVENTORY[0] };
       return undefined;
@@ -91,8 +91,10 @@ describe("AdminInventoryScreen (Total Assets table)", () => {
     await userEvent.selectOptions(screen.getByLabelText(/answer type/i), "yes_no");
     await userEvent.click(screen.getByLabelText(/flag for attention if yes/i));
     await userEvent.click(screen.getByRole("button", { name: "Add question" }));
-    await userEvent.click(screen.getByRole("button", { name: "Save questions" }));
+    // staged only — nothing written yet
+    expect(f.mock.calls.some(([, i]) => (i as RequestInit)?.method === "PATCH")).toBe(false);
 
+    await userEvent.click(screen.getByRole("button", { name: "Done" }));
     await waitFor(() => {
       const call = f.mock.calls.find(([u, i]) => String(u).endsWith("/api/admin/item-types/t1") && (i as RequestInit)?.method === "PATCH");
       expect(call).toBeTruthy();
@@ -101,10 +103,11 @@ describe("AdminInventoryScreen (Total Assets table)", () => {
       expect(body.return_questions[0]).toMatchObject({
         label: "Important — must not be wiped?", kind: "yes_no", flag_if_yes: true,
       });
+      expect(body.accessory_type_id).toBeUndefined(); // kit untouched
     });
   });
 
-  it("manage-type sheet links an accessory kit via the select", async () => {
+  it("manage-type sheet links an accessory kit on Done", async () => {
     const f = stubFetch((path, init) => {
       if (path.endsWith("/api/admin/item-types/t1") && init?.method === "PATCH") return { ...INVENTORY[0], accessory_type_id: "t2" };
       return undefined;
@@ -112,10 +115,10 @@ describe("AdminInventoryScreen (Total Assets table)", () => {
     wrap();
 
     await screen.findByText("RACK-0044");
-    const goProRow = screen.getByText("RACK-0044").closest("tr")!;
-    await userEvent.click(within(goProRow).getByRole("button", { name: /manage type/i }));
+    await userEvent.click(within(screen.getByText("RACK-0044").closest("tr")!).getByRole("button", { name: /manage type/i }));
     const dialog = await screen.findByRole("dialog");
     await userEvent.selectOptions(within(dialog).getByLabelText(/accessory kit/i), "t2");
+    await userEvent.click(screen.getByRole("button", { name: "Done" }));
 
     await waitFor(() => {
       const call = f.mock.calls.find(([u, i]) => String(u).endsWith("/api/admin/item-types/t1") && (i as RequestInit)?.method === "PATCH");
@@ -124,7 +127,7 @@ describe("AdminInventoryScreen (Total Assets table)", () => {
     });
   });
 
-  it("manage-type sheet creates and links an accessory kit", async () => {
+  it("manage-type sheet creates a new kit on Done", async () => {
     const f = stubFetch((path) => {
       if (path.endsWith("/api/admin/item-types/t1/accessory-kit"))
         return { id: "t9", name: "GoPro 13 Black Accessory Kit", category: "Camera", created_units: 1 };
@@ -133,13 +136,12 @@ describe("AdminInventoryScreen (Total Assets table)", () => {
     wrap();
 
     await screen.findByText("RACK-0044");
-    const goProRow = screen.getByText("RACK-0044").closest("tr")!;
-    await userEvent.click(within(goProRow).getByRole("button", { name: /manage type/i }));
-    await screen.findByRole("dialog");
-    await userEvent.click(screen.getByRole("button", { name: /add accessory kit/i }));
+    await userEvent.click(within(screen.getByText("RACK-0044").closest("tr")!).getByRole("button", { name: /manage type/i }));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.selectOptions(within(dialog).getByLabelText(/accessory kit/i), "__create__");
     expect(screen.getByLabelText("Kit name")).toHaveValue("GoPro 13 Black Accessory Kit");
     expect(screen.getByLabelText("Kit units")).toHaveValue(1);
-    await userEvent.click(screen.getByRole("button", { name: "Create kit" }));
+    await userEvent.click(screen.getByRole("button", { name: "Done" }));
 
     await waitFor(() => {
       const call = f.mock.calls.find(([u]) => String(u).endsWith("/api/admin/item-types/t1/accessory-kit"));
@@ -148,5 +150,43 @@ describe("AdminInventoryScreen (Total Assets table)", () => {
         name: "GoPro 13 Black Accessory Kit", count: 1,
       });
     });
+  });
+
+  it("manage-type sheet stages added units and applies them on Done", async () => {
+    const f = stubFetch((path, init) => {
+      if (path.endsWith("/api/admin/item-units") && init?.method === "POST") return { created: 2 };
+      return undefined;
+    });
+    wrap();
+
+    await screen.findByText("RACK-0044");
+    await userEvent.click(within(screen.getByText("RACK-0044").closest("tr")!).getByRole("button", { name: /manage type/i }));
+    await screen.findByRole("dialog");
+    await userEvent.click(screen.getByRole("button", { name: "More units" }));
+    await userEvent.click(screen.getByRole("button", { name: "More units" }));
+    expect(screen.getByText("+2")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Done" }));
+
+    await waitFor(() => {
+      const call = f.mock.calls.find(([u, i]) => String(u).endsWith("/api/admin/item-units") && (i as RequestInit)?.method === "POST");
+      expect(call).toBeTruthy();
+      expect(JSON.parse((call![1] as RequestInit).body as string)).toEqual({ item_type_id: "t1", count: 2 });
+    });
+  });
+
+  it("manage-type sheet Cancel discards staged changes without writing", async () => {
+    const f = stubFetch();
+    wrap();
+
+    await screen.findByText("RACK-0044");
+    await userEvent.click(within(screen.getByText("RACK-0044").closest("tr")!).getByRole("button", { name: /manage type/i }));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.click(screen.getByRole("button", { name: "More units" }));
+    await userEvent.selectOptions(within(dialog).getByLabelText(/accessory kit/i), "t2");
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    const writes = f.mock.calls.filter(([, i]) => ["PATCH", "POST", "PUT"].includes((i as RequestInit)?.method ?? ""));
+    expect(writes).toHaveLength(0);
   });
 });
