@@ -52,6 +52,20 @@ export function validateAnswers(questions: ReturnQuestion[], answers: ReturnAnsw
   return null;
 }
 
+// Draft answers may be incomplete — completeness is a return-time rule.
+// Only unknown keys and wrong value types are rejected.
+export function validateDraftAnswers(questions: ReturnQuestion[], answers: ReturnAnswers): string | null {
+  for (const key of Object.keys(answers)) {
+    const q = questions.find((x) => x.id === key);
+    if (!q) return `unknown question: ${key}`;
+    const v = answers[key];
+    if (q.kind === "yes_no" && typeof v !== "boolean") return `answer to "${q.label}" must be yes or no`;
+    if (q.kind === "text" && (typeof v !== "string" || v.length > 500))
+      return `answer to "${q.label}" must be text of at most 500 characters`;
+  }
+  return null;
+}
+
 export function computeFlagged(questions: ReturnQuestion[], answers: ReturnAnswers): boolean {
   return questions.some((q) => q.kind === "yes_no" && q.flag_if_yes === true && answers[q.id] === true);
 }
