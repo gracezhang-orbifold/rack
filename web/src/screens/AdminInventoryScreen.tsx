@@ -1,8 +1,7 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { Link } from "react-router-dom";
-import { useAddAccessoryKit, useAdminInventory, useCreateUnits, useUnitHistory, useUpdateItemType, useUpdateUnit } from "../hooks/queries";
-import { AddItemTypeForm } from "../components/AddItemTypeForm";
-import { Button, Input, Spinner, useToast } from "../components/ui";
+import { useAddAccessoryKit, useAdminBorrows, useAdminInventory, useCreateUnits, useUnitHistory, useUpdateItemType, useUpdateUnit } from "../hooks/queries";
+import { Button, Input, Sheet, Spinner, useToast } from "../components/ui";
 import { errorMessage } from "../lib/borrowResult";
 import type { AdminItemType, ReturnQuestion, UnitStatus } from "../lib/types";
 
@@ -151,30 +150,44 @@ function AddAccessoryKit({ type }: { type: AdminItemType }) {
 
 export function AdminInventoryScreen() {
   const inventory = useAdminInventory();
+  const borrows = useAdminBorrows();
   const createUnits = useCreateUnits();
   const updateUnit = useUpdateUnit();
   const updateItemType = useUpdateItemType();
   const toast = useToast();
   const [expandedUnit, setExpandedUnit] = useState<string | null>(null);
-  const [editQuestions, setEditQuestions] = useState<string | null>(null);
+  const [manageType, setManageType] = useState<string | null>(null);
   const [q, setQ] = useState("");
+  const [category, setCategory] = useState("");
+  const [status, setStatus] = useState("");
 
   if (inventory.isLoading) return <Spinner />;
   if (inventory.isError) return <p className="p-4 text-sm text-muted">Couldn't load inventory.</p>;
 
+  const types = inventory.data!;
+  const categories = [...new Set(types.map((t) => t.category))].sort();
+  // Who holds each unit right now, for the Assigned To column.
+  const holders = new Map(
+    (borrows.data?.active ?? []).map((b) => [b.item_unit_id, b.full_name ?? b.email]));
+
   const term = q.trim().toLowerCase();
-  const visible = !term ? inventory.data! : inventory.data!.filter(
-    (t) => t.name.toLowerCase().includes(term) || t.category.toLowerCase().includes(term)
-      || t.units.some((u) => u.asset_id?.toLowerCase().includes(term)));
+  const rows = types.flatMap((t) => t.units.map((u) => ({ u, t })))
+    .filter(({ u, t }) =>
+      (!term || t.name.toLowerCase().includes(term) || t.category.toLowerCase().includes(term)
+        || u.asset_id?.toLowerCase().includes(term))
+      && (!category || t.category === category)
+      && (!status || u.status === status));
+  const emptyTypes = types.filter((t) => t.units.length === 0);
+  const managed = manageType ? types.find((t) => t.id === manageType) ?? null : null;
+
+  const setUnitStatus = (id: string, next: string) =>
+    updateUnit.mutate({ id, body: { status: next } }, {
+      onError: (err) => toast(errorMessage(err), "error"),
+    });
 
   const addUnit = (item_type_id: string) =>
     createUnits.mutate({ item_type_id, count: 1 }, {
       onSuccess: () => toast("Unit added."),
-      onError: (err) => toast(errorMessage(err), "error"),
-    });
-
-  const setStatus = (id: string, status: string) =>
-    updateUnit.mutate({ id, body: { status } }, {
       onError: (err) => toast(errorMessage(err), "error"),
     });
 
@@ -188,61 +201,123 @@ export function AdminInventoryScreen() {
     <div className="animate-fade-up py-3">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-lg font-semibold">Total assets</h2>
-        <Link to="/admin/labels" className="text-sm text-muted underline">QR labels</Link>
+        <div className="flex items-center gap-3">
+          <Link to="/admin/labels" className="text-sm text-muted underline">QR labels</Link>
+          <Link to="/admin/add"><Button className="whitespace-nowrap">Add Asset</Button></Link>
+        </div>
       </div>
 
-      <AddItemTypeForm />
+      <div className="mb-3 flex flex-col gap-2 md:flex-row">
+        <Input placeholder="Search asset…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <select aria-label="Category" value={category} onChange={(e) => setCategory(e.target.value)}
+          className="min-h-[44px] rounded-xl border border-edge bg-surface px-3 text-sm text-text focus:border-primary focus:outline-none">
+          <option value="">Category</option>
+          {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <select aria-label="Status" value={status} onChange={(e) => setStatus(e.target.value)}
+          className="min-h-[44px] rounded-xl border border-edge bg-surface px-3 text-sm text-text focus:border-primary focus:outline-none">
+          <option value="">Status</option>
+          {STATUSES.map((st) => <option key={st} value={st}>{st.replace("_", " ")}</option>)}
+        </select>
+      </div>
 
-      <Input placeholder="Search inventory…" value={q} onChange={(e) => setQ(e.target.value)} className="mb-3" />
-      {visible.length === 0 && <p className="mt-6 text-center text-sm text-muted">No matches.</p>}
-      <ul className="grid grid-cols-1 items-start gap-3 md:grid-cols-2">
-        {visible.map((t) => (
-          <li key={t.id} className="rounded-xl bg-surface p-3 shadow-sm shadow-black/20">
-            <div className="mb-2 flex items-center justify-between">
-              <div>
-                <p className="font-medium">{t.name}</p>
-                <p className="text-xs text-muted/70">{t.category}{t.notes ? ` · ${t.notes}` : ""}</p>
-              </div>
-              <Button variant="secondary" onClick={() => addUnit(t.id)} disabled={createUnits.isPending}>+ Unit</Button>
-            </div>
-            <button className="mb-2 text-xs text-muted underline"
-              onClick={() => setEditQuestions(editQuestions === t.id ? null : t.id)}>
-              Return questions ({t.return_questions.length})
-            </button>
-            {editQuestions === t.id && <ReturnQuestionsEditor type={t} />}
+      <div className="overflow-x-auto rounded-xl bg-surface shadow-sm shadow-black/20">
+        <table className="w-full min-w-[560px] text-left text-sm">
+          <thead>
+            <tr className="text-xs uppercase tracking-wide text-muted/70">
+              <th className="px-3 py-2 font-semibold">Asset No</th>
+              <th className="px-3 py-2 font-semibold">Name</th>
+              <th className="px-3 py-2 font-semibold">Category</th>
+              <th className="px-3 py-2 font-semibold">Status</th>
+              <th className="px-3 py-2 font-semibold">Assigned To</th>
+              <th className="px-3 py-2" />
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 && (
+              <tr><td colSpan={6} className="px-3 py-6 text-center text-muted">No matching assets.</td></tr>
+            )}
+            {rows.map(({ u, t }) => (
+              <Fragment key={u.id}>
+                <tr className="border-t border-edge/40">
+                  <td className="px-3 py-2">
+                    <button className="font-mono text-xs text-muted underline decoration-dotted"
+                      onClick={() => setExpandedUnit(expandedUnit === u.id ? null : u.id)}>
+                      {u.asset_id ?? u.id.slice(0, 8)}
+                    </button>
+                  </td>
+                  <td className="px-3 py-2 font-medium">{t.name}</td>
+                  <td className="px-3 py-2 text-muted">{t.category}</td>
+                  <td className="px-3 py-2">
+                    <select className="rounded-lg border border-edge bg-surface px-2 py-1 text-xs" defaultValue={u.status}
+                      aria-label={`Status for ${u.asset_id ?? t.name}`}
+                      onChange={(e) => setUnitStatus(u.id, e.target.value)}>
+                      {STATUSES.map((st) => <option key={st} value={st}>{st.replace("_", " ")}</option>)}
+                    </select>
+                  </td>
+                  <td className="px-3 py-2 text-muted">{holders.get(u.id) ?? "—"}</td>
+                  <td className="px-3 py-2 text-right">
+                    <button className="text-xs text-primary-soft underline" onClick={() => setManageType(t.id)}>
+                      Manage type
+                    </button>
+                  </td>
+                </tr>
+                {expandedUnit === u.id && (
+                  <tr className="border-t border-edge/40 bg-surface-2/50">
+                    <td colSpan={6} className="px-3 py-2"><UnitHistory unitId={u.id} /></td>
+                  </tr>
+                )}
+              </Fragment>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {emptyTypes.length > 0 && (
+        <section className="mt-5">
+          <h3 className="mb-2 text-sm font-semibold text-muted">Types without units</h3>
+          <ul className="grid grid-cols-1 gap-2 md:grid-cols-2">
+            {emptyTypes.map((t) => (
+              <li key={t.id} className="flex items-center justify-between rounded-xl bg-surface p-3 shadow-sm shadow-black/20">
+                <div>
+                  <p className="text-sm font-medium">{t.name}</p>
+                  <p className="text-xs text-muted">{t.category}{t.notes ? ` · ${t.notes}` : ""}</p>
+                </div>
+                <button className="text-xs text-primary-soft underline" onClick={() => setManageType(t.id)}>
+                  Manage type
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      <Sheet open={managed !== null} onClose={() => setManageType(null)}>
+        {managed && (
+          <div className="max-h-[75vh] overflow-y-auto">
+            <h3 className="mb-1 text-lg font-semibold">{managed.name}</h3>
+            <p className="mb-3 text-xs text-muted">{managed.category}{managed.notes ? ` · ${managed.notes}` : ""} · {managed.units.length} unit{managed.units.length === 1 ? "" : "s"}</p>
+            <Button variant="secondary" className="mb-3 w-full" disabled={createUnits.isPending}
+              onClick={() => addUnit(managed.id)}>
+              + Add a unit
+            </Button>
             <label className="mb-2 flex items-center justify-between gap-2 whitespace-nowrap text-xs text-muted">
               Accessory kit
-              <select className="rounded-lg border border-edge px-2 py-1 text-sm"
-                value={t.accessory_type_id ?? ""} disabled={updateItemType.isPending}
-                onChange={(e) => setAccessory(t.id, e.target.value || null)}>
+              <select className="rounded-lg border border-edge bg-surface px-2 py-1 text-sm"
+                value={managed.accessory_type_id ?? ""} disabled={updateItemType.isPending}
+                onChange={(e) => setAccessory(managed.id, e.target.value || null)}>
                 <option value="">None</option>
-                {inventory.data!.filter((o) => o.id !== t.id).map((o) => (
+                {types.filter((o) => o.id !== managed.id).map((o) => (
                   <option key={o.id} value={o.id}>{o.name}</option>
                 ))}
               </select>
             </label>
-            {!t.accessory_type_id && <AddAccessoryKit key={t.id} type={t} />}
-            <ul className="flex flex-col gap-1">
-              {t.units.map((u) => (
-                <li key={u.id} className="text-sm">
-                  <div className="flex items-center justify-between">
-                    <button className="text-left text-muted underline decoration-dotted"
-                      onClick={() => setExpandedUnit(expandedUnit === u.id ? null : u.id)}>
-                      {u.asset_id ?? u.id.slice(0, 8)}
-                    </button>
-                    <select className="rounded-lg border border-edge px-2 py-1" defaultValue={u.status}
-                      onChange={(e) => setStatus(u.id, e.target.value)}>
-                      {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                  </div>
-                  {expandedUnit === u.id && <UnitHistory unitId={u.id} />}
-                </li>
-              ))}
-              {t.units.length === 0 && <li className="text-xs text-muted/70">No units yet.</li>}
-            </ul>
-          </li>
-        ))}
-      </ul>
+            {!managed.accessory_type_id && <AddAccessoryKit key={managed.id} type={managed} />}
+            <p className="mb-1 mt-3 text-xs font-semibold uppercase tracking-wide text-muted/70">Return questions</p>
+            <ReturnQuestionsEditor key={`rq-${managed.id}`} type={managed} />
+          </div>
+        )}
+      </Sheet>
     </div>
   );
 }

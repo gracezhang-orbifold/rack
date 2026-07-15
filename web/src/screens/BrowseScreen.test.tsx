@@ -108,7 +108,7 @@ describe("BrowseScreen", () => {
     AVAIL[1],
   ];
 
-  it("offers a pre-checked accessory kit and sends with_accessory", async () => {
+  it("offers an opt-in accessory kit and sends with_accessory when checked", async () => {
     const f = vi.fn().mockImplementation(async (url: RequestInfo | URL) => {
       const path = String(url);
       if (path.endsWith("/api/borrow"))
@@ -125,7 +125,8 @@ describe("BrowseScreen", () => {
     await screen.findByText("GoPro 13 Black");
     await userEvent.click(screen.getByRole("button", { name: "Borrow" }));
     const kitBox = await screen.findByRole("checkbox", { name: /also take an accessory kit \(2 available\)/i });
-    expect(kitBox).toBeChecked();
+    expect(kitBox).not.toBeChecked(); // kit is opt-in
+    await userEvent.click(kitBox);
     await userEvent.click(screen.getByRole("button", { name: /confirm & unlock/i }));
     const call = f.mock.calls.find(([u]) => String(u).endsWith("/api/borrow"));
     expect(JSON.parse((call![1] as RequestInit).body as string)).toEqual({
@@ -154,7 +155,8 @@ describe("BrowseScreen", () => {
     wrap();
     await screen.findByText("GoPro 13 Black");
     await userEvent.click(screen.getByRole("button", { name: "Borrow" }));
-    await userEvent.click(await screen.findByRole("button", { name: /confirm & unlock/i }));
+    await userEvent.click(await screen.findByRole("checkbox", { name: /also take an accessory kit/i }));
+    await userEvent.click(screen.getByRole("button", { name: /confirm & unlock/i }));
 
     await userEvent.type(await screen.findByPlaceholderText(/type the asset id/i), "RACK-0001");
     await userEvent.click(screen.getByRole("button", { name: "Confirm" }));

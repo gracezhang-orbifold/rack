@@ -34,7 +34,7 @@ export function BrowseScreen() {
   const [result, setResult] = useState<BorrowResult | null>(null);
   const [confirmedAsset, setConfirmedAsset] = useState<string | null>(null);
   const [confirmedKitAsset, setConfirmedKitAsset] = useState<string | null>(null);
-  const [withKit, setWithKit] = useState(true);
+  const [withKit, setWithKit] = useState(false);
   const [manualId, setManualId] = useState("");
   const [scanKey, setScanKey] = useState(0);
   const [scanError, setScanError] = useState<string | null>(null);
@@ -62,7 +62,7 @@ export function BrowseScreen() {
   const openSheet = (item: AvailabilityItem) => {
     setSelected(item); setDays(7); setResult(null);
     setConfirmedAsset(null); setManualId(""); setScanError(null);
-    setConfirmedKitAsset(null); setWithKit(true);
+    setConfirmedKitAsset(null); setWithKit(false);
     borrow.reset(); confirmUnit.reset();
   };
   const closeSheet = () => { setSelected(null); setResult(null); setConfirmedAsset(null); setConfirmedKitAsset(null); };

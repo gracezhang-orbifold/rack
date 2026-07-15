@@ -25,7 +25,7 @@ function wrap() {
 
 beforeEach(() => vi.restoreAllMocks());
 
-it("offers the accessory kit and sends with_accessory on a label checkout", async () => {
+it("offers an opt-in accessory kit and sends with_accessory when checked on a label checkout", async () => {
   const f = vi.fn().mockImplementation(async (url: RequestInfo | URL) => {
     const path = String(url);
     if (path.endsWith("/api/borrow"))
@@ -41,7 +41,8 @@ it("offers the accessory kit and sends with_accessory on a label checkout", asyn
   wrap();
 
   const kitBox = await screen.findByRole("checkbox", { name: /also take an accessory kit \(1 available\)/i });
-  expect(kitBox).toBeChecked();
+  expect(kitBox).not.toBeChecked(); // kit is opt-in
+  await userEvent.click(kitBox);
   await userEvent.click(screen.getByRole("button", { name: /confirm & unlock/i }));
   expect(await screen.findByText(/accessory kit checked out too/i)).toBeInTheDocument();
   const call = f.mock.calls.find(([u]) => String(u).endsWith("/api/borrow"));
