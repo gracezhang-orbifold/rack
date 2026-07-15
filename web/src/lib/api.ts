@@ -1,6 +1,6 @@
 import type {
   Me, AvailabilityItem, MyBorrows, BorrowResult, AdminBorrows, AdminItemType, AdminUnit,
-  ScannedUnit, ItemRequest, RequestKind, UnitHistoryRow, ReminderSettings,
+  ScannedUnit, ItemRequest, RequestKind, UnitHistoryRow, ReminderSettings, ServiceRequest, AdminServiceRequest,
   AttentionItem, ReturnAnswers, ReturnQuestion,
 } from "./types";
 
@@ -63,6 +63,12 @@ export const api = {
   unitByAsset: (assetId: string) => request<ScannedUnit>(`/units/by-asset/${encodeURIComponent(assetId)}`),
 
   myRequests: () => request<ItemRequest[]>("/requests"),
+  raiseServiceRequest: (body: { asset_id: string; description: string }) =>
+    request<ServiceRequest>("/service-requests", post(body)),
+  myServiceRequests: () => request<ServiceRequest[]>("/service-requests"),
+  saveDraftAnswers: (session_id: string, answers: ReturnAnswers) =>
+    request<{ session_id: string; saved: true }>(`/borrow/${encodeURIComponent(session_id)}/draft-answers`,
+      { method: "PUT", body: JSON.stringify({ answers }) }),
   createRequest: (body: { item_type_id: string; kind: RequestKind; start_at?: string; days?: number }) =>
     request<ItemRequest>("/requests", post(body)),
   cancelRequest: (id: string) =>
@@ -71,6 +77,9 @@ export const api = {
   adminBorrows: () => request<AdminBorrows>("/admin/borrows"),
   adminReturn: (session_id: string) => request<{ session_id: string; status: string }>("/admin/return", post({ session_id })),
   adminAttention: () => request<AttentionItem[]>("/admin/attention"),
+  adminServiceRequests: () => request<AdminServiceRequest[]>("/admin/service-requests"),
+  resolveServiceRequest: (id: string) =>
+    request<{ id: string; status: string }>(`/admin/service-requests/${encodeURIComponent(id)}/resolve`, post()),
   resolveAttention: (session_id: string) =>
     request<{ session_id: string; resolved: true }>(`/admin/attention/${encodeURIComponent(session_id)}/resolve`, post()),
   adminItemTypes: () => request<AdminItemType[]>("/admin/item-types"),

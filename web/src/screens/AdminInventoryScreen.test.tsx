@@ -52,7 +52,7 @@ describe("AdminInventoryScreen", () => {
 
   it("offers existing categories as suggestions", async () => {
     wrap();
-    await screen.findByRole("heading", { name: /inventory/i });
+    await screen.findByRole("heading", { name: /total assets/i });
     const options = [...document.querySelectorAll("#category-options option")].map((o) => o.getAttribute("value"));
     expect(options).toEqual(["Camera", "Tracking"]);
   });

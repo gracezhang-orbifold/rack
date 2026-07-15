@@ -12,8 +12,9 @@ const tabClass = ({ isActive }: { isActive: boolean }) =>
 export function TabBar({ role }: { role: Role }) {
   return (
     <nav className="fixed inset-x-0 bottom-0 z-30 flex border-t border-edge bg-surface pb-[env(safe-area-inset-bottom)] md:hidden">
-      <NavLink to="/" end className={tabClass}>Browse</NavLink>
-      <NavLink to="/my-items" className={tabClass}>My Items</NavLink>
+      <NavLink to="/" end className={tabClass}>Dashboard</NavLink>
+      <NavLink to="/my-items" className={tabClass}>My Assets</NavLink>
+      <NavLink to="/requests" className={tabClass}>Requests</NavLink>
       {role === "admin" && <NavLink to="/admin" className={tabClass}>Admin</NavLink>}
     </nav>
   );

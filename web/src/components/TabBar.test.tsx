@@ -7,11 +7,12 @@ const renderAt = (role: "user" | "admin") =>
   render(<MemoryRouter><TabBar role={role} /></MemoryRouter>);
 
 describe("TabBar", () => {
-  it("shows Browse and My Items for a regular user, hides Admin", () => {
+  it("shows Dashboard, My Assets and Requests for a regular user, hides Admin", () => {
     renderAt("user");
-    expect(screen.getByRole("link", { name: /browse/i })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /my items/i })).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /admin/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /dashboard/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /my assets/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /requests/i })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /^admin$/i })).not.toBeInTheDocument();
   });
   it("shows Admin for an admin", () => {
     renderAt("admin");

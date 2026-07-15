@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { useAddAccessoryKit, useAdminInventory, useCreateItemType, useCreateUnits, useUnitHistory, useUpdateItemType, useUpdateUnit } from "../hooks/queries";
+import { useAddAccessoryKit, useAdminInventory, useCreateUnits, useUnitHistory, useUpdateItemType, useUpdateUnit } from "../hooks/queries";
+import { AddItemTypeForm } from "../components/AddItemTypeForm";
 import { Button, Input, Spinner, useToast } from "../components/ui";
 import { errorMessage } from "../lib/borrowResult";
 import type { AdminItemType, ReturnQuestion, UnitStatus } from "../lib/types";
@@ -150,13 +151,10 @@ function AddAccessoryKit({ type }: { type: AdminItemType }) {
 
 export function AdminInventoryScreen() {
   const inventory = useAdminInventory();
-  const createType = useCreateItemType();
   const createUnits = useCreateUnits();
   const updateUnit = useUpdateUnit();
   const updateItemType = useUpdateItemType();
   const toast = useToast();
-  const [newName, setNewName] = useState("");
-  const [newCategory, setNewCategory] = useState("");
   const [expandedUnit, setExpandedUnit] = useState<string | null>(null);
   const [editQuestions, setEditQuestions] = useState<string | null>(null);
   const [q, setQ] = useState("");
@@ -164,25 +162,10 @@ export function AdminInventoryScreen() {
   if (inventory.isLoading) return <Spinner />;
   if (inventory.isError) return <p className="p-4 text-sm text-muted">Couldn't load inventory.</p>;
 
-  const categories = [...new Set(inventory.data!.map((t) => t.category))].sort();
-  // An item type is a duplicate when both name and category already exist.
-  const duplicate = inventory.data!.find(
-    (t) => t.name.trim().toLowerCase() === newName.trim().toLowerCase()
-      && t.category.trim().toLowerCase() === newCategory.trim().toLowerCase());
-
   const term = q.trim().toLowerCase();
   const visible = !term ? inventory.data! : inventory.data!.filter(
     (t) => t.name.toLowerCase().includes(term) || t.category.toLowerCase().includes(term)
       || t.units.some((u) => u.asset_id?.toLowerCase().includes(term)));
-
-  const addType = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newName || !newCategory || duplicate) return;
-    createType.mutate({ name: newName, category: newCategory }, {
-      onSuccess: () => { setNewName(""); setNewCategory(""); toast("Item type added."); },
-      onError: (err) => toast(errorMessage(err), "error"),
-    });
-  };
 
   const addUnit = (item_type_id: string) =>
     createUnits.mutate({ item_type_id, count: 1 }, {
@@ -204,36 +187,11 @@ export function AdminInventoryScreen() {
   return (
     <div className="animate-fade-up py-3">
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Inventory</h2>
-        <div className="flex gap-3">
-          <Link to="/admin/labels" className="text-sm text-muted underline">QR labels</Link>
-          <Link to="/admin" className="text-sm text-muted underline">Overview</Link>
-        </div>
+        <h2 className="text-lg font-semibold">Total assets</h2>
+        <Link to="/admin/labels" className="text-sm text-muted underline">QR labels</Link>
       </div>
 
-      <form onSubmit={addType} className="mb-5 flex flex-col gap-2 rounded-xl bg-surface p-3 shadow-sm shadow-black/20">
-        <p className="text-sm font-medium">Add item type</p>
-        <Input placeholder="Name" value={newName} onChange={(e) => setNewName(e.target.value)} />
-        <Input placeholder="Category" list="category-options" value={newCategory}
-          onChange={(e) => setNewCategory(e.target.value)} />
-        <datalist id="category-options">
-          {categories.map((c) => <option key={c} value={c} />)}
-        </datalist>
-        {duplicate && (
-          <div className="rounded-xl bg-warning/15 p-3 text-sm text-warning">
-            <p className="mb-2">
-              <span className="font-medium">{duplicate.name}</span> already exists in{" "}
-              <span className="font-medium">{duplicate.category}</span> — change the name or
-              category, or add a unit to the existing item instead.
-            </p>
-            <Button variant="secondary" type="button" disabled={createUnits.isPending}
-              onClick={() => { addUnit(duplicate.id); setNewName(""); setNewCategory(""); }}>
-              Add a unit to the existing item
-            </Button>
-          </div>
-        )}
-        <Button type="submit" disabled={createType.isPending || !!duplicate}>Add type</Button>
-      </form>
+      <AddItemTypeForm />
 
       <Input placeholder="Search inventory…" value={q} onChange={(e) => setQ(e.target.value)} className="mb-3" />
       {visible.length === 0 && <p className="mt-6 text-center text-sm text-muted">No matches.</p>}

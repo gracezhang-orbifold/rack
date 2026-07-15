@@ -167,3 +167,27 @@ export function useAddAccessoryKit() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["inventory"] }); qc.invalidateQueries({ queryKey: ["availability"] }); },
   });
 }
+
+export const useMyServiceRequests = () => useQuery({ queryKey: ["my-service"], queryFn: api.myServiceRequests });
+export const useAdminServiceRequests = () => useQuery({ queryKey: ["service"], queryFn: api.adminServiceRequests });
+export function useRaiseServiceRequest() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.raiseServiceRequest,
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["my-service"] }); qc.invalidateQueries({ queryKey: ["service"] }); },
+  });
+}
+export function useResolveServiceRequest() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.resolveServiceRequest(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["service"] }),
+  });
+}
+export function useSaveDraftAnswers() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { session_id: string; answers: ReturnAnswers }) => api.saveDraftAnswers(v.session_id, v.answers),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["my-borrows"] }),
+  });
+}
