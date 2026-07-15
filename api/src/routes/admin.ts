@@ -4,6 +4,25 @@ import { requireAdmin } from "../auth.js";
 import { processItemAvailability } from "../requests.js";
 import { validateQuestions, renderAnswers, type ReturnQuestion, type ReturnAnswers } from "../questionnaire.js";
 
+// Give every unlabeled, non-retired unit a sequential RACK-NNNN asset id,
+// continuing from the highest existing number. Runs after every unit insert
+// so new units never sit unlabeled (uuid fallbacks in the admin table);
+// the assign-asset-ids route keeps it callable for pre-existing gaps.
+async function assignAssetIds(): Promise<number> {
+  const { rows } = await query(`
+    with base as (
+      select coalesce(max(substring(asset_id from '^RACK-(\\d+)$')::int), 0) as n
+      from item_units where asset_id ~ '^RACK-\\d+$'),
+    numbered as (
+      select id, row_number() over (order by created_at) as rn
+      from item_units where asset_id is null and status <> 'retired')
+    update item_units u
+    set asset_id = 'RACK-' || lpad((base.n + numbered.rn)::text, 4, '0')
+    from numbered, base where u.id = numbered.id
+    returning u.id`);
+  return rows.length;
+}
+
 // Accessory-kit link validation: the id must name an existing item type and
 // differ from the type being edited. Returns an error message or null.
 async function accessoryLinkError(value: unknown, selfId: string | null): Promise<string | null> {
@@ -205,6 +224,7 @@ export async function adminRoutes(app: FastifyInstance) {
         insert into item_units (item_type_id, cabinet_id)
         select $1, $2 from generate_series(1, $3)`,
         [kit.id, cabinet.rows[0]?.id ?? null, count]);
+      await assignAssetIds();
       await query(`update item_types set accessory_type_id = $2 where id = $1`,
         [req.params.id, kit.id]);
       await processItemAvailability(kit.id);
@@ -222,25 +242,13 @@ export async function adminRoutes(app: FastifyInstance) {
         insert into item_units (item_type_id, cabinet_id, asset_id, notes)
         select $1, $2, $3, $4 from generate_series(1, $5) returning id`,
         [item_type_id, cabinet.rows[0]?.id ?? null, asset_id ?? null, notes ?? null, count]);
+      await assignAssetIds();
       await processItemAvailability(item_type_id);
       return { created: rows.length };
     });
 
-  // Give every unlabeled, non-retired unit a sequential RACK-NNNN asset id so
-  // it can get a printed QR label. Continues from the highest existing number.
   app.post("/api/admin/assign-asset-ids", async () => {
-    const { rows } = await query(`
-      with base as (
-        select coalesce(max(substring(asset_id from '^RACK-(\\d+)$')::int), 0) as n
-        from item_units where asset_id ~ '^RACK-\\d+$'),
-      numbered as (
-        select id, row_number() over (order by created_at) as rn
-        from item_units where asset_id is null and status <> 'retired')
-      update item_units u
-      set asset_id = 'RACK-' || lpad((base.n + numbered.rn)::text, 4, '0')
-      from numbered, base where u.id = numbered.id
-      returning u.id`);
-    return { assigned: rows.length };
+    return { assigned: await assignAssetIds() };
   });
 
   const UNIT_STATUSES = new Set(["available", "in_use", "needs_repair", "retired", "missing"]);

@@ -156,6 +156,7 @@ AKR=$(curl -sb "$AJ" "$API/api/admin/item-types/$SOLO/accessory-kit" -H 'Content
 AKID=$(echo "$AKR" | jqv id)
 check "kit created with default name" "Smoke Solo Accessory Kit" "$(echo "$AKR" | jqv name)"
 check "kit unit count matches item" "3" "$(sql "select count(*) from item_units where item_type_id = '$AKID';")"
+check "kit units get RACK asset ids" "3" "$(sql "select count(*) from item_units where item_type_id = '$AKID' and asset_id ~ '^RACK-[0-9]+$';")"
 check "item linked to new kit" "$AKID" "$(sql "select accessory_type_id from item_types where id = '$SOLO';")"
 check "second kit rejected" "409" "$(curl -s -o /dev/null -w '%{http_code}' -b "$AJ" -X POST "$API/api/admin/item-types/$SOLO/accessory-kit" -H 'Content-Type: application/json' -d '{}')"
 
