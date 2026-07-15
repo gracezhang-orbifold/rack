@@ -173,6 +173,39 @@ check "resolve succeeds" "resolved" "$(curl -sb "$AJ" -X POST "$API/api/admin/se
 check "re-resolve is 409" "409" "$(curl -s -o /dev/null -w '%{http_code}' -b "$AJ" -X POST "$API/api/admin/service-requests/$SRID/resolve")"
 check "admin open list empty after resolve" "0" "$(curl -sb "$AJ" "$API/api/admin/service-requests" | jqv '')"
 
+echo "== Draft answers"
+# Earlier sessions left active for this user (the extended GoPro loan S2, or
+# an Oculus race win) never got their label scanned, and assign-asset-ids
+# (above) has since tagged their units — that trips the unconfirmed-checkout
+# guard on the next borrow. Clear any such stragglers first.
+for row in $(sql "
+    select s.id || ':' || u.asset_id
+    from borrow_sessions s
+    join item_units u on u.id = s.item_unit_id
+    where s.user_id = (select id from profiles where email = 'user@rack.local')
+      and s.status = 'active' and s.unit_confirmed_at is null and u.asset_id is not null"); do
+  sid="${row%%:*}"; aid="${row#*:}"
+  curl -sb "$UJ" "$API/api/return" -H 'Content-Type: application/json' \
+    -d "{\"session_id\":\"$sid\",\"asset_id\":\"$aid\"}" >/dev/null
+done
+B10=$(curl -sb "$UJ" "$API/api/borrow" -H 'Content-Type: application/json' -d "{\"item_type_id\":\"$SDT\"}")
+SD_DRAFT=$(echo "$B10" | jqv session_id)
+check "borrow for draft test" "yes" "$([ -n "$SD_DRAFT" ] && echo yes || echo no)"
+check "partial draft saved" "true" "$(curl -sb "$UJ" -X PUT "$API/api/borrow/$SD_DRAFT/draft-answers" -H 'Content-Type: application/json' -d '{"answers":{"q_contents":"half-written note"}}' | jqv saved)"
+check "my-borrows carries draft" "half-written note" "$(curl -sb "$UJ" "$API/api/my-borrows" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{const a=JSON.parse(d).active.find(b=>b.session_id==="'"$SD_DRAFT"'");console.log(a&&a.draft_answers?a.draft_answers.q_contents:"")})')"
+check "unknown draft key is 400" "400" "$(curl -s -o /dev/null -w '%{http_code}' -b "$UJ" -X PUT "$API/api/borrow/$SD_DRAFT/draft-answers" -H 'Content-Type: application/json' -d '{"answers":{"zz":true}}')"
+check "wrong type draft is 400" "400" "$(curl -s -o /dev/null -w '%{http_code}' -b "$UJ" -X PUT "$API/api/borrow/$SD_DRAFT/draft-answers" -H 'Content-Type: application/json' -d '{"answers":{"q_keep":"yes"}}')"
+check "malformed session id is 404" "404" "$(curl -s -o /dev/null -w '%{http_code}' -b "$UJ" -X PUT "$API/api/borrow/not-a-uuid/draft-answers" -H 'Content-Type: application/json' -d '{"answers":{}}')"
+# assign-asset-ids (above) may have tagged this unit too — include the label
+# scan on return when so, same as the earlier "== Return" section.
+A10=$(sql "select coalesce(u.asset_id, '') from borrow_sessions s join item_units u on u.id = s.item_unit_id where s.id = '$SD_DRAFT';")
+RBODY10="{\"session_id\":\"$SD_DRAFT\",\"answers\":{\"q_contents\":\"final note\",\"q_keep\":false}}"
+[ -n "$A10" ] && RBODY10="{\"session_id\":\"$SD_DRAFT\",\"asset_id\":\"$A10\",\"answers\":{\"q_contents\":\"final note\",\"q_keep\":false}}"
+RETD=$(curl -sb "$UJ" "$API/api/return" -H 'Content-Type: application/json' -d "$RBODY10")
+check "return with full answers succeeds" "returned" "$(echo "$RETD" | jqv status)"
+check "draft cleared after return" "" "$(sql "select draft_answers from borrow_sessions where id = '$SD_DRAFT';")"
+check "return answers recorded" "t" "$(sql "select (return_answers is not null) from borrow_sessions where id = '$SD_DRAFT';")"
+
 echo "== Cleanup"
 # Delete every 'Smoke *' type this run created via the admin API, so the dev
 # DB (and the admin UI's dropdowns) don't accumulate test litter. Cascade by

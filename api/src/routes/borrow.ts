@@ -5,7 +5,7 @@ import { unlockDoor } from "../seam.js";
 import { processItemAvailability } from "../requests.js";
 import { escapeHtml as esc } from "../resend.js";
 import { emailAdmins } from "../notify.js";
-import { validateAnswers, computeFlagged, renderAnswers,
+import { validateAnswers, validateDraftAnswers, computeFlagged, renderAnswers,
   type ReturnQuestion, type ReturnAnswers, type AnswerPair } from "../questionnaire.js";
 
 async function itemLabelForSession(sessionId: string) {
@@ -300,5 +300,36 @@ export async function borrowRoutes(app: FastifyInstance) {
         await notifyAdminsOfFlag(session.id, renderAnswers(questions, ans), req.user!);
       }
       return { session_id: session.id, status: "returned", damaged: damaged ?? false, flagged };
+    });
+
+  // Pre-answer return questions from My Assets; the return sheet prefills
+  // from this draft. Partial answers allowed — completeness is checked at
+  // return time, not here.
+  app.put<{ Params: { sessionId: string }; Body: { answers?: ReturnAnswers } }>(
+    "/api/borrow/:sessionId/draft-answers", { preHandler: requireUser }, async (req, reply) => {
+      const { answers } = req.body ?? {};
+      if (answers === undefined || typeof answers !== "object" || answers === null || Array.isArray(answers))
+        return reply.code(400).send({ error: "answers must be an object" });
+      let session;
+      try {
+        ({ rows: [session] } = await query(`
+          select s.id, s.status, s.user_id, t.return_questions
+          from borrow_sessions s
+          join item_units u on u.id = s.item_unit_id
+          join item_types t on t.id = u.item_type_id
+          where s.id = $1`, [req.params.sessionId]));
+      } catch (e: any) {
+        if (e?.code === "22P02") return reply.code(404).send({ error: "session not found" });
+        throw e;
+      }
+      if (!session || session.user_id !== req.user!.id)
+        return reply.code(404).send({ error: "session not found" });
+      if (session.status !== "active")
+        return reply.code(409).send({ error: "session is not active" });
+      const err = validateDraftAnswers(session.return_questions ?? [], answers);
+      if (err) return reply.code(400).send({ error: err });
+      await query(`update borrow_sessions set draft_answers = $2 where id = $1`,
+        [session.id, Object.keys(answers).length ? JSON.stringify(answers) : null]);
+      return { session_id: session.id, saved: true };
     });
 }
