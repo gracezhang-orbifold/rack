@@ -85,16 +85,14 @@ export function AdminLabelsScreen() {
           Print {selectedCount} label{selectedCount === 1 ? "" : "s"}
         </Button>
         {units.length > 0 && (
-          <label className="flex items-center justify-between text-sm text-muted">
-            Sort by
-            <select className="rounded-lg border border-edge px-2 py-1"
-              value={sortBy} onChange={(e) => setSortBy(e.target.value as SortBy)}>
-              <option value="category">Category</option>
-              <option value="name">Item name</option>
-              <option value="added">Date added</option>
-              <option value="number">Asset number</option>
-            </select>
-          </label>
+          <select aria-label="Sort by" value={sortBy} onChange={(e) => setSortBy(e.target.value as SortBy)}
+            className="min-h-[44px] rounded-xl border border-edge bg-surface px-3 text-sm text-text focus:border-primary focus:outline-none">
+            {/* the default category grouping doubles as the placeholder */}
+            <option value="category">Sort by</option>
+            <option value="name">Item name</option>
+            <option value="added">Date added</option>
+            <option value="number">Asset number</option>
+          </select>
         )}
         {units.length > 0 && (
           <div className="flex items-center justify-between text-sm">

@@ -40,6 +40,7 @@ export function AdminInventoryScreen() {
   const updateUnit = useUpdateUnit();
   const toast = useToast();
   const [expandedUnit, setExpandedUnit] = useState<string | null>(null);
+  const [expandedName, setExpandedName] = useState<string | null>(null);
   const [manageType, setManageType] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [category, setCategory] = useState("");
@@ -133,7 +134,11 @@ export function AdminInventoryScreen() {
                       {u.asset_id ?? u.id.slice(0, 8)}
                     </button>
                   </td>
-                  <td className="max-w-[160px] truncate px-3 py-2 font-medium" title={t.name}>{t.name}</td>
+                  <td title={t.name} onClick={() => setExpandedName(expandedName === u.id ? null : u.id)}
+                    className={`max-w-[160px] cursor-pointer px-3 py-2 font-medium ${
+                      expandedName === u.id ? "whitespace-normal break-words" : "truncate"}`}>
+                    {t.name}
+                  </td>
                   <td className="px-3 py-2 text-muted">{t.category}</td>
                   <td className="px-3 py-2">
                     <select className="rounded-lg border border-edge bg-surface px-2 py-1 text-xs" defaultValue={u.status}
