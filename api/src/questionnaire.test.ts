@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  validateQuestions, validateAnswers, computeFlagged, renderAnswers,
+  validateQuestions, validateAnswers, computeFlagged, renderAnswers, validateDraftAnswers,
   type ReturnQuestion,
 } from "./questionnaire.js";
 
@@ -67,5 +67,18 @@ describe("renderAnswers", () => {
       { label: "Important — must not be wiped?", value: false },
     ]);
     expect(renderAnswers(null, null)).toEqual([]);
+  });
+});
+
+describe("validateDraftAnswers", () => {
+  it("allows partial answers", () => {
+    expect(validateDraftAnswers(QS, {})).toBeNull();
+    expect(validateDraftAnswers(QS, { q1: "raw files" })).toBeNull();
+    expect(validateDraftAnswers(QS, { q2: true })).toBeNull();
+  });
+  it("rejects unknown keys and wrong types", () => {
+    expect(validateDraftAnswers(QS, { zz: true })).toMatch(/unknown/);
+    expect(validateDraftAnswers(QS, { q2: "yes" as unknown as boolean })).toMatch(/yes or no/);
+    expect(validateDraftAnswers(QS, { q1: "x".repeat(501) })).toMatch(/500/);
   });
 });
