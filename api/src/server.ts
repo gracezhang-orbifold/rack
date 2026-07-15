@@ -10,6 +10,7 @@ import { catalogRoutes } from "./routes/catalog.js";
 import { borrowRoutes } from "./routes/borrow.js";
 import { adminRoutes } from "./routes/admin.js";
 import { requestRoutes } from "./routes/requests.js";
+import { serviceRoutes } from "./routes/service.js";
 import { runReminders } from "./reminders.js";
 
 export async function buildServer() {
@@ -21,6 +22,7 @@ export async function buildServer() {
   await app.register(borrowRoutes);
   await app.register(adminRoutes);
   await app.register(requestRoutes);
+  await app.register(serviceRoutes);
   if (env.NODE_ENV !== "production") {
     app.post("/api/dev/run-reminders", async () => runReminders());
   }

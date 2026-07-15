@@ -3,22 +3,10 @@ import { query } from "../db.js";
 import { requireUser } from "../auth.js";
 import { unlockDoor } from "../seam.js";
 import { processItemAvailability } from "../requests.js";
-import { escapeHtml as esc, sendEmail } from "../resend.js";
+import { escapeHtml as esc } from "../resend.js";
+import { emailAdmins } from "../notify.js";
 import { validateAnswers, computeFlagged, renderAnswers,
   type ReturnQuestion, type ReturnAnswers, type AnswerPair } from "../questionnaire.js";
-
-// Best-effort admin broadcast — the return itself must not fail on email trouble.
-async function emailAdmins(subject: string, html: string) {
-  try {
-    const { rows: admins } = await query(`select email from profiles where role = 'admin'`);
-    for (const a of admins) {
-      const result = await sendEmail({ to: a.email, subject, html });
-      if (!result.ok) console.error("admin email failed for", a.email);
-    }
-  } catch (err) {
-    console.error("admin notification failed", err);
-  }
-}
 
 async function itemLabelForSession(sessionId: string) {
   const { rows: [item] } = await query(`
