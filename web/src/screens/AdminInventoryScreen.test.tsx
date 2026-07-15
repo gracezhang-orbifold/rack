@@ -14,6 +14,9 @@ const INVENTORY = [
     { id: "u2", asset_id: "RACK-0050", status: "in_use", owner: null, notes: null, created_at: "2026-07-01T00:00:00Z" },
   ] },
   { id: "t3", name: "MacBook Air", category: "Laptop", notes: null, accessory_type_id: null, return_questions: [], units: [] },
+  { id: "t4", name: "AKASO Strap", category: "Camera Accessories", notes: null, accessory_type_id: null, return_questions: [], units: [
+    { id: "u3", asset_id: "RACK-0001", status: "available", owner: null, notes: null, created_at: "2026-07-01T00:00:00Z" },
+  ] },
 ];
 const BORROWS = {
   active: [
@@ -65,6 +68,26 @@ describe("AdminInventoryScreen (Total Assets table)", () => {
     await userEvent.selectOptions(screen.getByLabelText("Status"), "available");
     await waitFor(() => expect(screen.queryByText("RACK-0050")).not.toBeInTheDocument());
     expect(screen.getByText("RACK-0044")).toBeInTheDocument();
+  });
+
+  it("sorts rows by the Sort by dropdown", async () => {
+    stubFetch();
+    wrap();
+    await screen.findByText("RACK-0044");
+    const assetIds = () =>
+      screen.getAllByText(/^RACK-/).map((el) => el.textContent);
+    // natural order follows type order in the API response
+    expect(assetIds()).toEqual(["RACK-0044", "RACK-0050", "RACK-0001"]);
+
+    await userEvent.selectOptions(screen.getByLabelText("Sort by"), "name");
+    expect(assetIds()).toEqual(["RACK-0001", "RACK-0044", "RACK-0050"]);
+
+    await userEvent.selectOptions(screen.getByLabelText("Sort by"), "asset");
+    expect(assetIds()).toEqual(["RACK-0001", "RACK-0044", "RACK-0050"]);
+
+    await userEvent.selectOptions(screen.getByLabelText("Sort by"), "status");
+    // available, available, in_use — RACK-0050 (in_use) sorts last
+    expect(assetIds()[2]).toBe("RACK-0050");
   });
 
   it("shows unit-less types under 'Types without units'", async () => {
@@ -138,7 +161,10 @@ describe("AdminInventoryScreen (Total Assets table)", () => {
     await screen.findByText("RACK-0044");
     await userEvent.click(within(screen.getByText("RACK-0044").closest("tr")!).getByRole("button", { name: /manage type/i }));
     const dialog = await screen.findByRole("dialog");
-    await userEvent.selectOptions(within(dialog).getByLabelText(/accessory kit/i), "__create__");
+    const kitSelect = within(dialog).getByLabelText(/accessory kit/i) as HTMLSelectElement;
+    // "+ Create a new kit…" sits right after None, before the type list
+    expect([...kitSelect.options].map((o) => o.value).slice(0, 2)).toEqual(["", "__create__"]);
+    await userEvent.selectOptions(kitSelect, "__create__");
     expect(screen.getByLabelText("Kit name")).toHaveValue("GoPro 13 Black Accessory Kit");
     expect(screen.getByLabelText("Kit units")).toHaveValue(1);
     await userEvent.click(screen.getByRole("button", { name: "Done" }));
