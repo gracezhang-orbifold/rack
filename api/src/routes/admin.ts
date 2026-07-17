@@ -4,22 +4,25 @@ import { requireAdmin } from "../auth.js";
 import { processItemAvailability } from "../requests.js";
 import { validateQuestions, renderAnswers, type ReturnQuestion, type ReturnAnswers } from "../questionnaire.js";
 
-// Give every unlabeled, non-retired unit a sequential RACK-NNNN asset id,
-// continuing from the highest existing number. Runs after every unit insert
-// so new units never sit unlabeled (uuid fallbacks in the admin table);
-// the assign-asset-ids route keeps it callable for pre-existing gaps.
-async function assignAssetIds(): Promise<number> {
+// Give unlabeled, non-retired units sequential RACK-NNNN asset ids,
+// continuing from the highest existing number. Unit-creation endpoints pass
+// the ids they just inserted so new units never sit unlabeled (uuid
+// fallbacks in the admin table) — without retroactively labeling older
+// unlabeled units, which stays the assign-asset-ids route's explicit job.
+async function assignAssetIds(onlyUnitIds?: string[]): Promise<number> {
   const { rows } = await query(`
     with base as (
       select coalesce(max(substring(asset_id from '^RACK-(\\d+)$')::int), 0) as n
       from item_units where asset_id ~ '^RACK-\\d+$'),
     numbered as (
       select id, row_number() over (order by created_at) as rn
-      from item_units where asset_id is null and status <> 'retired')
+      from item_units
+      where asset_id is null and status <> 'retired'
+        and ($1::uuid[] is null or id = any($1::uuid[])))
     update item_units u
     set asset_id = 'RACK-' || lpad((base.n + numbered.rn)::text, 4, '0')
     from numbered, base where u.id = numbered.id
-    returning u.id`);
+    returning u.id`, [onlyUnitIds ?? null]);
   return rows.length;
 }
 
@@ -42,6 +45,65 @@ async function accessoryLinkError(value: unknown, selfId: string | null): Promis
 
 export async function adminRoutes(app: FastifyInstance) {
   app.addHook("preHandler", requireAdmin);
+
+  app.get("/api/admin/users", async () => {
+    const { rows } = await query(
+      `select id, email, full_name, role, created_at from profiles order by created_at`);
+    return rows;
+  });
+
+  app.patch<{ Params: { id: string }; Body: { role?: string } }>(
+    "/api/admin/users/:id", async (req, reply) => {
+      const { role } = req.body ?? {};
+      if (role !== "admin" && role !== "user")
+        return reply.code(400).send({ error: "role must be admin or user" });
+      if (req.params.id === req.user!.id)
+        return reply.code(409).send({ error: "you cannot change your own role" });
+      try {
+        // Guarded update: refuses to demote the last remaining admin.
+        const { rows } = await query(
+          `update profiles set role = $2::user_role
+           where id = $1
+             and not ($2::text = 'user' and role = 'admin'
+               and (select count(*) from profiles where role = 'admin') = 1)
+           returning id, email, full_name, role, created_at`,
+          [req.params.id, role]);
+        if (rows[0]) return rows[0];
+        const exists = await query(`select 1 from profiles where id = $1`, [req.params.id]);
+        if (!exists.rows[0]) return reply.code(404).send({ error: "not found" });
+        return reply.code(409).send({ error: "cannot demote the last admin" });
+      } catch (e: any) {
+        if (e.code === "22P02") return reply.code(404).send({ error: "not found" });
+        throw e;
+      }
+    });
+
+  app.get("/api/admin/allowlist", async () => {
+    const { rows } = await query(`select email, created_at from admin_allowlist order by created_at`);
+    return rows;
+  });
+
+  app.post<{ Body: { email?: string } }>("/api/admin/allowlist", async (req, reply) => {
+    const email = req.body?.email?.trim().toLowerCase();
+    if (!email || !email.includes("@"))
+      return reply.code(400).send({ error: "valid email required" });
+    const existing = await query(`select 1 from profiles where email = $1`, [email]);
+    if (existing.rows[0])
+      return reply.code(409).send({ error: "this email already has an account — promote them from the members list" });
+    const { rows } = await query(
+      `insert into admin_allowlist (email) values ($1)
+       on conflict (email) do update set email = excluded.email
+       returning email, created_at`, [email]);
+    return rows[0];
+  });
+
+  app.delete<{ Params: { email: string } }>(
+    "/api/admin/allowlist/:email", async (req, reply) => {
+      const { rowCount } = await query(
+        `delete from admin_allowlist where email = lower($1)`, [req.params.email]);
+      if (!rowCount) return reply.code(404).send({ error: "not found" });
+      return { ok: true };
+    });
 
   app.get("/api/admin/borrows", async () => {
     const active = await query(`select * from active_borrows order by is_overdue desc, due_at`);
@@ -220,11 +282,11 @@ export async function adminRoutes(app: FastifyInstance) {
         `insert into item_types (name, category) values ($1, $2) returning *`,
         [name, parent.category]);
       const cabinet = await query(`select id from cabinets order by created_at limit 1`);
-      await query(`
+      const kitUnits = await query(`
         insert into item_units (item_type_id, cabinet_id)
-        select $1, $2 from generate_series(1, $3)`,
+        select $1, $2 from generate_series(1, $3) returning id`,
         [kit.id, cabinet.rows[0]?.id ?? null, count]);
-      await assignAssetIds();
+      await assignAssetIds(kitUnits.rows.map((r) => r.id));
       await query(`update item_types set accessory_type_id = $2 where id = $1`,
         [req.params.id, kit.id]);
       await processItemAvailability(kit.id);
@@ -242,7 +304,7 @@ export async function adminRoutes(app: FastifyInstance) {
         insert into item_units (item_type_id, cabinet_id, asset_id, notes)
         select $1, $2, $3, $4 from generate_series(1, $5) returning id`,
         [item_type_id, cabinet.rows[0]?.id ?? null, asset_id ?? null, notes ?? null, count]);
-      await assignAssetIds();
+      await assignAssetIds(rows.map((r) => r.id));
       await processItemAvailability(item_type_id);
       return { created: rows.length };
     });

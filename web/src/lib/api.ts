@@ -1,7 +1,7 @@
 import type {
   Me, AvailabilityItem, MyBorrows, BorrowResult, AdminBorrows, AdminItemType, AdminUnit,
   ScannedUnit, ItemRequest, RequestKind, UnitHistoryRow, ReminderSettings, ServiceRequest, AdminServiceRequest,
-  AttentionItem, ReturnAnswers, ReturnQuestion,
+  AttentionItem, ReturnAnswers, ReturnQuestion, AdminUser, AllowlistEntry,
 } from "./types";
 
 export class ApiError extends Error {
@@ -82,6 +82,13 @@ export const api = {
     request<{ id: string; status: string }>(`/admin/service-requests/${encodeURIComponent(id)}/resolve`, post()),
   resolveAttention: (session_id: string) =>
     request<{ session_id: string; resolved: true }>(`/admin/attention/${encodeURIComponent(session_id)}/resolve`, post()),
+  adminUsers: () => request<AdminUser[]>("/admin/users"),
+  setUserRole: (id: string, role: "admin" | "user") =>
+    request<AdminUser>(`/admin/users/${encodeURIComponent(id)}`, patch({ role })),
+  adminAllowlist: () => request<AllowlistEntry[]>("/admin/allowlist"),
+  addAllowlist: (email: string) => request<AllowlistEntry>("/admin/allowlist", post({ email })),
+  removeAllowlist: (email: string) =>
+    request<{ ok: true }>(`/admin/allowlist/${encodeURIComponent(email)}`, { method: "DELETE" }),
   adminItemTypes: () => request<AdminItemType[]>("/admin/item-types"),
   createItemType: (body: { name: string; category: string; notes?: string; return_questions?: ReturnQuestion[] }) =>
     request<AdminItemType>("/admin/item-types", post(body)),

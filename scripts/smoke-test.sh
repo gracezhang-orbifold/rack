@@ -19,6 +19,15 @@ PASS=0; FAIL=0
 check() { if [ "$2" = "$3" ]; then PASS=$((PASS+1)); echo "  ok: $1";
   else FAIL=$((FAIL+1)); echo "  FAIL: $1 (expected $2, got $3)"; fi; }
 sql() { $PSQL -tA -c "$1"; }
+# Units created via the API are labeled at birth, so borrows of them must be
+# scan-confirmed before the next borrow, and scanned back in on return.
+# Confirms the session and echoes the unit's asset id for later returns.
+confirm() { # $1 = cookie jar, $2 = session id
+  local aid; aid=$(sql "select u.asset_id from borrow_sessions s join item_units u on u.id = s.item_unit_id where s.id = '$2';")
+  [ -n "$aid" ] && curl -sb "$1" "$API/api/borrow/confirm" -H 'Content-Type: application/json' \
+    -d "{\"session_id\":\"$2\",\"asset_id\":\"$aid\"}" >/dev/null
+  echo "$aid"
+}
 jqv() { node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{try{const j=JSON.parse(d);const p=process.argv[1];const v=p?p.split(".").reduce((a,k)=>a?.[k],j):j;console.log(Array.isArray(v)?v.length:v??"")}catch{console.log("")}})' "$1"; }
 
 UJ=$(mktemp); AJ=$(mktemp)   # cookie jars
@@ -89,11 +98,12 @@ curl -sb "$AJ" "$API/api/admin/item-units" -H 'Content-Type: application/json' \
   -d "{\"item_type_id\":\"$SDT\"}" >/dev/null
 B4=$(curl -sb "$UJ" "$API/api/borrow" -H 'Content-Type: application/json' -d "{\"item_type_id\":\"$SDT\"}")
 S4=$(echo "$B4" | jqv session_id)
+A4=$(confirm "$UJ" "$S4")
 check "my-borrows carries questions" "2" "$(curl -sb "$UJ" "$API/api/my-borrows" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{const a=JSON.parse(d).active.find(b=>b.item_name==="Smoke SD card");console.log(a?a.return_questions.length:"")})')"
-check "return without yes/no answer is 400" "400" "$(curl -s -o /dev/null -w '%{http_code}' -b "$UJ" "$API/api/return" -H 'Content-Type: application/json' -d "{\"session_id\":\"$S4\"}")"
-check "unknown answer key is 400" "400" "$(curl -s -o /dev/null -w '%{http_code}' -b "$UJ" "$API/api/return" -H 'Content-Type: application/json' -d "{\"session_id\":\"$S4\",\"answers\":{\"zz\":true,\"q_keep\":true}}")"
+check "return without yes/no answer is 400" "400" "$(curl -s -o /dev/null -w '%{http_code}' -b "$UJ" "$API/api/return" -H 'Content-Type: application/json' -d "{\"session_id\":\"$S4\",\"asset_id\":\"$A4\"}")"
+check "unknown answer key is 400" "400" "$(curl -s -o /dev/null -w '%{http_code}' -b "$UJ" "$API/api/return" -H 'Content-Type: application/json' -d "{\"session_id\":\"$S4\",\"asset_id\":\"$A4\",\"answers\":{\"zz\":true,\"q_keep\":true}}")"
 RET4=$(curl -sb "$UJ" "$API/api/return" -H 'Content-Type: application/json' \
-  -d "{\"session_id\":\"$S4\",\"answers\":{\"q_contents\":\"client shoot raw files\",\"q_keep\":true}}")
+  -d "{\"session_id\":\"$S4\",\"asset_id\":\"$A4\",\"answers\":{\"q_contents\":\"client shoot raw files\",\"q_keep\":true}}")
 check "flagged return succeeds" "returned" "$(echo "$RET4" | jqv status)"
 check "return reports flagged" "true" "$(echo "$RET4" | jqv flagged)"
 check "flagged unit stays available" "available" "$(sql "select u.status from item_units u join borrow_sessions s on s.item_unit_id = u.id where s.id = '$S4';")"
@@ -133,19 +143,24 @@ check "unlinked type has null accessory" "yes" "$(curl -sb "$UJ" "$API/api/avail
 
 B7=$(curl -sb "$UJ" "$API/api/borrow" -H 'Content-Type: application/json' -d "{\"item_type_id\":\"$CAM\",\"with_accessory\":true}")
 S7=$(echo "$B7" | jqv session_id); K7=$(echo "$B7" | jqv accessory.session_id)
+A7=$(confirm "$UJ" "$S7"); AK7=$(confirm "$UJ" "$K7")
 check "camera session created" "yes" "$([ -n "$S7" ] && echo yes || echo no)"
 check "kit session created" "yes" "$([ -n "$K7" ] && echo yes || echo no)"
 check "kit shares the due date" "yes" "$([ "$(echo "$B7" | jqv due_at)" = "$(echo "$B7" | jqv accessory.due_at)" ] && echo yes || echo no)"
 B8=$(curl -sb "$UJ" "$API/api/borrow" -H 'Content-Type: application/json' -d "{\"item_type_id\":\"$CAM\",\"with_accessory\":true}")
-check "camera ok when kits exhausted" "yes" "$([ -n "$(echo "$B8" | jqv session_id)" ] && echo yes || echo no)"
+S8=$(echo "$B8" | jqv session_id)
+check "camera ok when kits exhausted" "yes" "$([ -n "$S8" ] && echo yes || echo no)"
 check "kit exhaustion reported" "no kits available — camera only" "$(echo "$B8" | jqv accessory.error)"
-for S in $S7 $K7 $(echo "$B8" | jqv session_id); do
-  curl -sb "$UJ" "$API/api/return" -H 'Content-Type: application/json' -d "{\"session_id\":\"$S\"}" >/dev/null
+confirm "$UJ" "$S8" >/dev/null
+for S in $S7 $K7 $S8; do
+  A=$(sql "select u.asset_id from borrow_sessions s join item_units u on u.id = s.item_unit_id where s.id = '$S';")
+  curl -sb "$UJ" "$API/api/return" -H 'Content-Type: application/json' -d "{\"session_id\":\"$S\",\"asset_id\":\"$A\"}" >/dev/null
 done
 B9=$(curl -sb "$UJ" "$API/api/borrow" -H 'Content-Type: application/json' -d "{\"item_type_id\":\"$KIT\"}")
 S9=$(echo "$B9" | jqv session_id)
 check "kit borrows alone, no companion field" "yes" "$([ -n "$S9" ] && [ -z "$(echo "$B9" | jqv accessory.session_id)" ] && echo yes || echo no)"
-curl -sb "$UJ" "$API/api/return" -H 'Content-Type: application/json' -d "{\"session_id\":\"$S9\"}" >/dev/null
+A9=$(confirm "$UJ" "$S9")
+curl -sb "$UJ" "$API/api/return" -H 'Content-Type: application/json' -d "{\"session_id\":\"$S9\",\"asset_id\":\"$A9\"}" >/dev/null
 
 # Create-and-link: the kit ships in the item's box, so it doesn't exist in
 # inventory yet — one call creates the kit type + units and links it.
@@ -207,12 +222,35 @@ check "return with full answers succeeds" "returned" "$(echo "$RETD" | jqv statu
 check "draft cleared after return" "" "$(sql "select draft_answers from borrow_sessions where id = '$SD_DRAFT';")"
 check "return answers recorded" "t" "$(sql "select (return_answers is not null) from borrow_sessions where id = '$SD_DRAFT';")"
 
+echo "== Admin accounts"
+ADMIN_ID=$(curl -sb "$AJ" "$API/api/me" | jqv id)
+USER_ID=$(curl -sb "$UJ" "$API/api/me" | jqv id)
+check "allowlist add" "smoke-admin@rack.local" "$(curl -sb "$AJ" "$API/api/admin/allowlist" -H 'Content-Type: application/json' -d '{"email":"Smoke-Admin@rack.local"}' | jqv email)"
+check "allowlist add is idempotent" "smoke-admin@rack.local" "$(curl -sb "$AJ" "$API/api/admin/allowlist" -H 'Content-Type: application/json' -d '{"email":"smoke-admin@rack.local"}' | jqv email)"
+check "allowlist rejects existing account" "409" "$(curl -s -o /dev/null -w '%{http_code}' -b "$AJ" "$API/api/admin/allowlist" -H 'Content-Type: application/json' -d '{"email":"user@rack.local"}')"
+check "non-admin blocked from users list" "403" "$(curl -s -o /dev/null -w '%{http_code}' -b "$UJ" "$API/api/admin/users")"
+SAJ=$(mktemp)
+check "allowlisted signup gets admin role" "admin" "$(curl -sc "$SAJ" "$API/api/auth/signup" -H 'Content-Type: application/json' -d '{"email":"smoke-admin@rack.local","password":"password123","full_name":"Smoke Admin"}' | jqv role)"
+check "allowlist entry consumed" "0" "$(sql "select count(*) from admin_allowlist where email = 'smoke-admin@rack.local';")"
+SMOKE_ADMIN_ID=$(curl -sb "$SAJ" "$API/api/me" | jqv id)
+check "self-demotion rejected" "409" "$(curl -s -o /dev/null -w '%{http_code}' -b "$AJ" -X PATCH "$API/api/admin/users/$ADMIN_ID" -H 'Content-Type: application/json' -d '{"role":"user"}')"
+check "admin can demote another admin" "user" "$(curl -sb "$AJ" -X PATCH "$API/api/admin/users/$SMOKE_ADMIN_ID" -H 'Content-Type: application/json' -d '{"role":"user"}' | jqv role)"
+check "demoted admin loses admin access" "403" "$(curl -s -o /dev/null -w '%{http_code}' -b "$SAJ" "$API/api/admin/users")"
+check "promote works" "admin" "$(curl -sb "$AJ" -X PATCH "$API/api/admin/users/$USER_ID" -H 'Content-Type: application/json' -d '{"role":"admin"}' | jqv role)"
+curl -sb "$AJ" -X PATCH "$API/api/admin/users/$USER_ID" -H 'Content-Type: application/json' -d '{"role":"user"}' >/dev/null
+check "bad role rejected" "400" "$(curl -s -o /dev/null -w '%{http_code}' -b "$AJ" -X PATCH "$API/api/admin/users/$USER_ID" -H 'Content-Type: application/json' -d '{"role":"root"}')"
+check "unknown user 404" "404" "$(curl -s -o /dev/null -w '%{http_code}' -b "$AJ" -X PATCH "$API/api/admin/users/not-a-uuid" -H 'Content-Type: application/json' -d '{"role":"user"}')"
+check "allowlist remove 404 when absent" "404" "$(curl -s -o /dev/null -w '%{http_code}' -b "$AJ" -X DELETE "$API/api/admin/allowlist/smoke-admin@rack.local")"
+
 echo "== Cleanup"
 # Delete every 'Smoke *' type this run created via the admin API, so the dev
 # DB (and the admin UI's dropdowns) don't accumulate test litter. Cascade by
 # hand — the FKs are NO ACTION: events -> sessions -> requests -> units ->
 # types, with accessory links to smoke types nulled first.
 sql "
+  delete from admin_allowlist where email like 'smoke-%';
+  delete from sessions where user_id in (select id from profiles where email like 'smoke-%');
+  delete from profiles where email like 'smoke-%';
   delete from service_requests;
   delete from device_events where borrow_session_id in (
     select s.id from borrow_sessions s

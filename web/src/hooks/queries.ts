@@ -168,6 +168,30 @@ export function useAddAccessoryKit() {
   });
 }
 
+export const useAdminUsers = () => useQuery({ queryKey: ["admin-users"], queryFn: api.adminUsers });
+export function useSetUserRole() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { id: string; role: "admin" | "user" }) => api.setUserRole(v.id, v.role),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-users"] }),
+  });
+}
+export const useAdminAllowlist = () => useQuery({ queryKey: ["allowlist"], queryFn: api.adminAllowlist });
+export function useAddAllowlist() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.addAllowlist,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["allowlist"] }),
+  });
+}
+export function useRemoveAllowlist() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.removeAllowlist,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["allowlist"] }),
+  });
+}
+
 export const useMyServiceRequests = () => useQuery({ queryKey: ["my-service"], queryFn: api.myServiceRequests });
 export const useAdminServiceRequests = () => useQuery({ queryKey: ["service"], queryFn: api.adminServiceRequests });
 export function useRaiseServiceRequest() {
