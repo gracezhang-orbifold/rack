@@ -99,3 +99,7 @@ export interface ServiceRequest {
 export interface AdminServiceRequest extends ServiceRequest {
   item_unit_id: string; unit_status: UnitStatus; email: string; full_name: string | null;
 }
+export interface AdminUser {
+  id: string; email: string; full_name: string | null; role: Role; created_at: string;
+}
+export interface AllowlistEntry { email: string; created_at: string; }

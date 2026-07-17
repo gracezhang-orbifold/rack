@@ -10,9 +10,17 @@ export async function authRoutes(app: FastifyInstance) {
       if (!password || password.length < 8) return reply.code(400).send({ error: "password must be at least 8 characters" });
       const hash = await hashPassword(password);
       try {
+        // Allowlisted emails become admins; the claim and the insert share
+        // one statement so a failed insert (duplicate email) also rolls
+        // back the claim.
         const { rows } = await query(
-          `insert into profiles (email, full_name, password_hash)
-           values (lower($1), $2, $3) returning id, email, role, full_name`,
+          `with claimed as (
+             delete from admin_allowlist where email = lower($1) returning email)
+           insert into profiles (email, full_name, password_hash, role)
+           values (lower($1), $2, $3,
+             case when exists (select 1 from claimed)
+               then 'admin'::user_role else 'user'::user_role end)
+           returning id, email, role, full_name`,
           [email, full_name ?? null, hash]);
         await createSession(reply, rows[0].id);
         return rows[0];
