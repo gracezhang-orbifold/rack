@@ -1,6 +1,6 @@
 import { ApiError } from "./api";
 
-export function borrowResultMessage(r: { unlock: "ok" | "skipped" }): { title: string; body: string } {
+export function borrowResultMessage(r: { unlock: "ok" | "skipped" | "code" }): { title: string; body: string } {
   if (r.unlock === "skipped") {
     return { title: "Checked out", body: "Cabinet not connected — find an admin to get your item." };
   }

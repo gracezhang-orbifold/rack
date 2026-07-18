@@ -37,7 +37,7 @@ export async function catalogRoutes(app: FastifyInstance) {
   app.get("/api/my-borrows", { preHandler: requireUser }, async (req) => {
     const active = await query(`
       select session_id, item_name, category, asset_id, checked_out_at, due_at, is_overdue,
-             unit_confirmed, return_questions, draft_answers
+             unit_confirmed, return_questions, draft_answers, access_code, access_code_expires_at
       from active_borrows where user_id = $1 order by due_at`, [req.user!.id]);
     const history = await query(`
       select s.id as session_id, t.name as item_name, u.asset_id, s.status,

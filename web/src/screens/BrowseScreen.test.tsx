@@ -79,6 +79,7 @@ describe("BrowseScreen", () => {
     await screen.findByText("GoPro 13 Black");
     await userEvent.click(screen.getByRole("button", { name: "Borrow" }));
     await userEvent.click(await screen.findByRole("button", { name: /confirm & unlock/i }));
+    await userEvent.click(await screen.findByRole("button", { name: "Unlock now" }));
     expect(await screen.findByText(/previous borrower flagged/i)).toBeInTheDocument();
     expect(screen.getByText(/must not be wiped/i)).toBeInTheDocument();
   });
@@ -128,6 +129,7 @@ describe("BrowseScreen", () => {
     expect(kitBox).not.toBeChecked(); // kit is opt-in
     await userEvent.click(kitBox);
     await userEvent.click(screen.getByRole("button", { name: /confirm & unlock/i }));
+    await userEvent.click(await screen.findByRole("button", { name: "Unlock now" }));
     const call = f.mock.calls.find(([u]) => String(u).endsWith("/api/borrow"));
     expect(JSON.parse((call![1] as RequestInit).body as string)).toEqual({
       item_type_id: "t1", days: 7, with_accessory: true,
@@ -157,6 +159,7 @@ describe("BrowseScreen", () => {
     await userEvent.click(screen.getByRole("button", { name: "Borrow" }));
     await userEvent.click(await screen.findByRole("checkbox", { name: /also take an accessory kit/i }));
     await userEvent.click(screen.getByRole("button", { name: /confirm & unlock/i }));
+    await userEvent.click(await screen.findByRole("button", { name: "Unlock now" }));
 
     await userEvent.type(await screen.findByPlaceholderText(/type the asset id/i), "RACK-0001");
     await userEvent.click(screen.getByRole("button", { name: "Confirm" }));
@@ -172,5 +175,34 @@ describe("BrowseScreen", () => {
       { session_id: "s1", asset_id: "RACK-0001" },
       { session_id: "s2", asset_id: "RACK-0002" },
     ]);
+  });
+
+  it("offers a keypad code for later and shows it after checkout", async () => {
+    const f = vi.fn().mockImplementation(async (url: RequestInfo | URL) => {
+      const path = String(url);
+      if (path.endsWith("/api/borrow"))
+        return { ok: true, status: 200, json: async () => ({
+          session_id: "s1", item_unit_id: "u1", due_at: "2026-07-21T00:00:00Z", unlock: "code",
+          access_code: { code: "4321", ends_at: "2026-07-18T18:00:00Z" },
+          last_return: null, accessory: null,
+        }) };
+      if (path.endsWith("/api/availability")) return { ok: true, status: 200, json: async () => AVAIL };
+      return { ok: true, status: 200, json: async () => [] };
+    });
+    vi.stubGlobal("fetch", f);
+    wrap();
+    await screen.findByText("GoPro 13 Black");
+    await userEvent.click(screen.getAllByRole("button", { name: "Borrow" })[0]);
+    await userEvent.click(screen.getByRole("button", { name: /confirm & unlock/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /get a code to unlock later/i }));
+
+    const call = f.mock.calls.find(([u]) => String(u).endsWith("/api/borrow"));
+    expect(JSON.parse((call![1] as RequestInit).body as string)).toEqual({
+      item_type_id: "t1", days: 7, access: "code",
+    });
+    expect(await screen.findByText("4321")).toBeInTheDocument();
+    expect(screen.getByText(/your cabinet code/i)).toBeInTheDocument();
+    // no scanner step — pickup is later; confirmation happens from My Items
+    expect(screen.queryByText(/scan the QR label/i)).not.toBeInTheDocument();
   });
 });

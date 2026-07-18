@@ -35,6 +35,7 @@ export function BrowseScreen() {
   const [confirmedAsset, setConfirmedAsset] = useState<string | null>(null);
   const [confirmedKitAsset, setConfirmedKitAsset] = useState<string | null>(null);
   const [withKit, setWithKit] = useState(false);
+  const [chooseAccess, setChooseAccess] = useState(false);
   const [manualId, setManualId] = useState("");
   const [scanKey, setScanKey] = useState(0);
   const [scanError, setScanError] = useState<string | null>(null);
@@ -62,7 +63,7 @@ export function BrowseScreen() {
   const openSheet = (item: AvailabilityItem) => {
     setSelected(item); setDays(7); setResult(null);
     setConfirmedAsset(null); setManualId(""); setScanError(null);
-    setConfirmedKitAsset(null); setWithKit(false);
+    setConfirmedKitAsset(null); setWithKit(false); setChooseAccess(false);
     borrow.reset(); confirmUnit.reset();
   };
   const closeSheet = () => { setSelected(null); setResult(null); setConfirmedAsset(null); setConfirmedKitAsset(null); };
@@ -99,11 +100,11 @@ export function BrowseScreen() {
     confirmAsset(assetId);
   };
 
-  const confirm = () => {
+  const confirm = (access: "unlock" | "code") => {
     if (!selected) return;
     borrow.mutate({ item_type_id: selected.item_type_id, days,
-      with_accessory: kitOffer && withKit ? true : undefined }, {
-      onSuccess: (r) => setResult(r),
+      with_accessory: kitOffer && withKit ? true : undefined, access }, {
+      onSuccess: (r) => { setResult(r); setChooseAccess(false); },
       onError: (e) => {
         if (e instanceof ApiError && e.status === 409) { toast(errorMessage(e)); closeSheet(); }
       },
@@ -171,6 +172,21 @@ export function BrowseScreen() {
             </p>
             <Button className="w-full" onClick={closeSheet}>Done</Button>
           </div>
+        ) : result && result.unlock === "code" ? (
+          <div className="text-center">
+            <h3 className="mb-1 text-lg font-semibold">Your cabinet code</h3>
+            <LastReturnNotice lastReturn={result.last_return} />
+            <p className="my-4 font-mono text-4xl font-bold tracking-[0.3em]">{result.access_code?.code}</p>
+            <p className="mb-1 text-sm text-muted">
+              Type it on the cabinet keypad, then press <span className="font-mono">#</span>.
+              Valid until {result.access_code ? new Date(result.access_code.ends_at).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" }) : ""}.
+            </p>
+            <p className="mb-5 text-xs text-muted/70">
+              The code stays visible on My Items. After you pick the item up, scan its label from
+              My Items — borrowing again is paused until you do.
+            </p>
+            <Button className="w-full" onClick={closeSheet}>Done</Button>
+          </div>
         ) : result ? (
           <div>
             <h3 className="mb-1 text-lg font-semibold">{borrowResultMessage(result).title}</h3>
@@ -221,9 +237,23 @@ export function BrowseScreen() {
               </label>
             )}
             {borrow.isError && <p className="mb-3 text-sm text-danger">{errorMessage(borrow.error)}</p>}
-            <Button className="w-full" disabled={borrow.isPending} onClick={confirm}>
-              {borrow.isPending ? "Unlocking…" : "Confirm & unlock"}
-            </Button>
+            {chooseAccess ? (
+              <div className="flex flex-col gap-2">
+                <Button className="w-full" disabled={borrow.isPending} onClick={() => confirm("unlock")}>
+                  {borrow.isPending ? "Working…" : "Unlock now"}
+                </Button>
+                <Button variant="secondary" className="w-full" disabled={borrow.isPending} onClick={() => confirm("code")}>
+                  Get a code to unlock later
+                </Button>
+                <p className="text-center text-xs text-muted/70">
+                  The code works on the cabinet keypad for 24 hours.
+                </p>
+              </div>
+            ) : (
+              <Button className="w-full" onClick={() => setChooseAccess(true)}>
+                Confirm & unlock
+              </Button>
+            )}
           </div>
         ) : null}
       </Sheet>

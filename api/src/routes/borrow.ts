@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { query } from "../db.js";
 import { requireUser } from "../auth.js";
-import { unlockDoor } from "../seam.js";
+import { createAccessCode, unlockDoor } from "../seam.js";
 import { processItemAvailability } from "../requests.js";
 import { escapeHtml as esc } from "../resend.js";
 import { emailAdmins } from "../notify.js";
@@ -65,12 +65,14 @@ async function logEvent(e: { lock_id?: string; session_id: string; user_id: stri
 }
 
 export async function borrowRoutes(app: FastifyInstance) {
-  app.post<{ Body: { item_type_id?: string; days?: number; unit_id?: string; with_accessory?: boolean } }>(
+  app.post<{ Body: { item_type_id?: string; days?: number; unit_id?: string; with_accessory?: boolean; access?: string } }>(
     "/api/borrow", { preHandler: requireUser }, async (req, reply) => {
-      const { item_type_id, days, unit_id, with_accessory } = req.body ?? {};
+      const { item_type_id, days, unit_id, with_accessory, access = "unlock" } = req.body ?? {};
       if (!item_type_id) return reply.code(400).send({ error: "item_type_id is required" });
       if (with_accessory !== undefined && typeof with_accessory !== "boolean")
         return reply.code(400).send({ error: "with_accessory must be a boolean" });
+      if (access !== "unlock" && access !== "code")
+        return reply.code(400).send({ error: "access must be unlock or code" });
       // A checkout whose label scan was skipped blocks further borrowing —
       // the database doesn't know which physical unit the user actually has.
       const { rows: pending } = await query(`
@@ -159,15 +161,9 @@ export async function borrowRoutes(app: FastifyInstance) {
           type: "unlock_requested", detail: { skipped: true, reason: "no active Seam lock configured for cabinet" } });
         return { ...session, unlock: "skipped", last_return, accessory };
       }
-      await logEvent({ lock_id: lock.id, session_id: session.session_id,
-        user_id: req.user!.id, type: "unlock_requested" });
-      const unlock = await unlockDoor(lock.seam_device_id);
-      await logEvent({ lock_id: lock.id, session_id: session.session_id,
-        user_id: req.user!.id, type: unlock.ok ? "unlock_succeeded" : "unlock_failed",
-        attemptId: unlock.actionAttemptId, detail: unlock.ok ? {} : { error: unlock.error } });
-      if (!unlock.ok) {
-        // Cancel every session this request created; one failed cancel must
-        // not strand the other, and the caller still gets the 502 either way.
+      // Cancel every session this request created; one failed cancel must
+      // not strand the other, and the caller still gets the 502 either way.
+      const cancelAll = async () => {
         const cancels = [session.session_id];
         if (accessory && "session_id" in accessory) cancels.push(accessory.session_id);
         for (const id of cancels) {
@@ -177,6 +173,39 @@ export async function borrowRoutes(app: FastifyInstance) {
             console.error("cancel_borrow_session failed for session", id, err);
           }
         }
+      };
+
+      if (access === "code") {
+        // "Unlock later": mint a keypad code valid for 24 hours instead of
+        // opening the door now. The borrower types it on the cabinet keypad.
+        const expiresAt = new Date(Date.now() + 24 * 3600_000);
+        await logEvent({ lock_id: lock.id, session_id: session.session_id,
+          user_id: req.user!.id, type: "unlock_requested", detail: { method: "code" } });
+        const minted = await createAccessCode(
+          lock.seam_device_id, `Rack borrow ${session.session_id.slice(0, 8)}`, new Date(), expiresAt);
+        await logEvent({ lock_id: lock.id, session_id: session.session_id,
+          user_id: req.user!.id, type: minted.ok ? "unlock_succeeded" : "unlock_failed",
+          detail: minted.ok ? { method: "code" } : { method: "code", error: minted.error } });
+        if (!minted.ok) {
+          await cancelAll();
+          return reply.code(502).send({ error: "couldn't create a door code — item not checked out, please retry" });
+        }
+        await query(
+          `update borrow_sessions set access_code = $2, access_code_expires_at = $3 where id = $1`,
+          [session.session_id, minted.code, expiresAt]);
+        return { ...session, unlock: "code",
+          access_code: { code: minted.code, ends_at: expiresAt.toISOString() },
+          last_return, accessory };
+      }
+
+      await logEvent({ lock_id: lock.id, session_id: session.session_id,
+        user_id: req.user!.id, type: "unlock_requested" });
+      const unlock = await unlockDoor(lock.seam_device_id);
+      await logEvent({ lock_id: lock.id, session_id: session.session_id,
+        user_id: req.user!.id, type: unlock.ok ? "unlock_succeeded" : "unlock_failed",
+        attemptId: unlock.actionAttemptId, detail: unlock.ok ? {} : { error: unlock.error } });
+      if (!unlock.ok) {
+        await cancelAll();
         return reply.code(502).send({ error: "cabinet did not unlock — item not checked out, please retry" });
       }
       return { ...session, unlock: "ok", last_return, accessory };

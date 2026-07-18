@@ -40,11 +40,12 @@ export const api = {
 
   availability: () => request<AvailabilityItem[]>("/availability"),
   myBorrows: () => request<MyBorrows>("/my-borrows"),
-  borrow: (item_type_id: string, days: number, unit_id?: string, with_accessory?: boolean) =>
+  borrow: (item_type_id: string, days: number, unit_id?: string, with_accessory?: boolean, access?: "unlock" | "code") =>
     request<BorrowResult>("/borrow", post({
       item_type_id, days,
       ...(unit_id ? { unit_id } : {}),
       ...(with_accessory ? { with_accessory: true } : {}),
+      ...(access === "code" ? { access } : {}),
     })),
   returnItem: (v: { session_id: string; asset_id?: string; damaged?: boolean; note?: string; answers?: ReturnAnswers }) =>
     request<{ session_id: string; status: string; damaged: boolean; flagged: boolean }>("/return", post({

@@ -255,15 +255,28 @@ check "admin sets user password" "true" "$(curl -sb "$AJ" "$API/api/admin/users/
 check "target sessions revoked" "401" "$(curl -s -o /dev/null -w '%{http_code}' -b "$SAJ" "$API/api/me")"
 check "admin-set password logs in" "200" "$(curl -s -o /dev/null -w '%{http_code}' "$API/api/auth/login" -H 'Content-Type: application/json' -d '{"email":"smoke-admin@rack.local","password":"adminreset1"}')"
 
+echo "== Door codes (unlock later)"
+SAJ2=$(mktemp)
+curl -sc "$SAJ2" "$API/api/auth/login" -H 'Content-Type: application/json' -d '{"email":"smoke-admin@rack.local","password":"adminreset1"}' >/dev/null
+CODET=$(curl -sb "$AJ" "$API/api/admin/item-types" -H 'Content-Type: application/json' -d '{"name":"Smoke Code Cam","category":"Camera"}' | jqv id)
+curl -sb "$AJ" "$API/api/admin/item-units" -H 'Content-Type: application/json' -d "{\"item_type_id\":\"$CODET\"}" >/dev/null
+check "bad access value rejected" "400" "$(curl -s -o /dev/null -w '%{http_code}' -b "$SAJ2" "$API/api/borrow" -H 'Content-Type: application/json' -d "{\"item_type_id\":\"$CODET\",\"access\":\"nope\"}")"
+BC=$(curl -sb "$SAJ2" "$API/api/borrow" -H 'Content-Type: application/json' -d "{\"item_type_id\":\"$CODET\",\"access\":\"code\"}")
+SC=$(echo "$BC" | jqv session_id)
+check "code borrow returns keypad code" "4321" "$(echo "$BC" | jqv access_code.code)"
+check "unlock mode is code" "code" "$(echo "$BC" | jqv unlock)"
+check "code stored on session" "4321" "$(sql "select access_code from borrow_sessions where id = '$SC';")"
+check "my-borrows carries the code" "4321" "$(curl -sb "$SAJ2" "$API/api/my-borrows" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{const a=JSON.parse(d).active.find(b=>b.item_name==="Smoke Code Cam");console.log(a?a.access_code:"")})')"
+ACODE=$(sql "select u.asset_id from borrow_sessions s join item_units u on u.id = s.item_unit_id where s.id = '$SC';")
+RETC=$(curl -sb "$SAJ2" "$API/api/return" -H 'Content-Type: application/json' -d "{\"session_id\":\"$SC\",\"asset_id\":\"$ACODE\"}")
+check "code borrow returns fine" "returned" "$(echo "$RETC" | jqv status)"
+
 echo "== Cleanup"
 # Delete every 'Smoke *' type this run created via the admin API, so the dev
 # DB (and the admin UI's dropdowns) don't accumulate test litter. Cascade by
 # hand — the FKs are NO ACTION: events -> sessions -> requests -> units ->
 # types, with accessory links to smoke types nulled first.
 sql "
-  delete from admin_allowlist where email like 'smoke-%';
-  delete from sessions where user_id in (select id from profiles where email like 'smoke-%');
-  delete from profiles where email like 'smoke-%';
   delete from service_requests where description like 'smoke:%';
   delete from device_events where borrow_session_id in (
     select s.id from borrow_sessions s
@@ -277,6 +290,10 @@ sql "
   update item_types set accessory_type_id = null
     where accessory_type_id in (select id from item_types where name like 'Smoke %');
   delete from item_types where name like 'Smoke %';
+  -- Accounts last: smoke users own borrow_sessions on smoke types, which the
+  -- deletes above must remove first (their login sessions cascade).
+  delete from admin_allowlist where email like 'smoke-%';
+  delete from profiles where email like 'smoke-%';
 " >/dev/null
 check "smoke artifacts cleaned up" "0" "$(sql "select count(*) from item_types where name like 'Smoke %';")"
 
