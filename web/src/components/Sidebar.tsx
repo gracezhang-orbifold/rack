@@ -53,7 +53,9 @@ export function Sidebar({ me }: { me: Me }) {
           onClick={() => logout.mutate()}>
           Log Out
         </button>
-        <div className="flex items-center gap-2 px-3 pb-1">
+        <NavLink to="/profile" aria-label="My account"
+          className={({ isActive }) =>
+            `flex items-center gap-2 rounded-xl px-3 py-1 pb-1 transition-colors ${isActive ? "bg-surface-2" : "active:bg-surface-2"}`}>
           <span aria-hidden="true" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/20 text-xs font-semibold text-primary-soft">
             {(me.full_name ?? me.email).slice(0, 1).toUpperCase()}
           </span>
@@ -61,7 +63,7 @@ export function Sidebar({ me }: { me: Me }) {
             <span className="block truncate text-sm">{me.full_name ?? me.email}</span>
             <span className="block text-xs capitalize text-muted">{me.role}</span>
           </span>
-        </div>
+        </NavLink>
       </div>
     </aside>
   );

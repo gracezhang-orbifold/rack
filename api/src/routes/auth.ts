@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { query } from "../db.js";
-import { createSession, destroySession, hashPassword, requireUser, verifyPassword } from "../auth.js";
+import { createSession, destroySession, hashPassword, readSessionId, requireUser, verifyPassword } from "../auth.js";
 
 export async function authRoutes(app: FastifyInstance) {
   app.post<{ Body: { email?: string; password?: string; full_name?: string } }>(
@@ -49,6 +49,23 @@ export async function authRoutes(app: FastifyInstance) {
   });
 
   app.get("/api/me", { preHandler: requireUser }, async (req) => req.user);
+
+  app.post<{ Body: { current_password?: string; new_password?: string } }>(
+    "/api/auth/change-password", { preHandler: requireUser }, async (req, reply) => {
+      const { current_password, new_password } = req.body ?? {};
+      if (!new_password || new_password.length < 8)
+        return reply.code(400).send({ error: "new password must be at least 8 characters" });
+      const { rows } = await query(
+        `select password_hash from profiles where id = $1`, [req.user!.id]);
+      if (!current_password || !(await verifyPassword(current_password, rows[0].password_hash)))
+        return reply.code(401).send({ error: "current password is incorrect" });
+      await query(`update profiles set password_hash = $2 where id = $1`,
+        [req.user!.id, await hashPassword(new_password)]);
+      // Sign out every other device; the session making this change stays.
+      await query(`delete from sessions where user_id = $1 and id <> $2`,
+        [req.user!.id, readSessionId(req)]);
+      return { ok: true };
+    });
 
   app.get("/api/me/settings", { preHandler: requireUser }, async (req) => {
     const { rows } = await query(

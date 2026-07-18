@@ -29,7 +29,7 @@ export async function destroySession(req: FastifyRequest, reply: FastifyReply) {
   reply.clearCookie("rack_session", { path: "/" });
 }
 
-function readSessionId(req: FastifyRequest): string | null {
+export function readSessionId(req: FastifyRequest): string | null {
   const raw = req.cookies["rack_session"];
   if (!raw) return null;
   const unsigned = req.unsignCookie(raw);

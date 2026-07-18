@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { query } from "../db.js";
-import { requireAdmin } from "../auth.js";
+import { hashPassword, requireAdmin } from "../auth.js";
 import { processItemAvailability } from "../requests.js";
 import { validateQuestions, renderAnswers, type ReturnQuestion, type ReturnAnswers } from "../questionnaire.js";
 
@@ -72,6 +72,27 @@ export async function adminRoutes(app: FastifyInstance) {
         const exists = await query(`select 1 from profiles where id = $1`, [req.params.id]);
         if (!exists.rows[0]) return reply.code(404).send({ error: "not found" });
         return reply.code(409).send({ error: "cannot demote the last admin" });
+      } catch (e: any) {
+        if (e.code === "22P02") return reply.code(404).send({ error: "not found" });
+        throw e;
+      }
+    });
+
+  app.post<{ Params: { id: string }; Body: { password?: string } }>(
+    "/api/admin/users/:id/password", async (req, reply) => {
+      const { password } = req.body ?? {};
+      if (!password || password.length < 8)
+        return reply.code(400).send({ error: "password must be at least 8 characters" });
+      if (req.params.id === req.user!.id)
+        return reply.code(409).send({ error: "change your own password from your profile page" });
+      try {
+        const { rows } = await query(
+          `update profiles set password_hash = $2 where id = $1 returning id`,
+          [req.params.id, await hashPassword(password)]);
+        if (!rows[0]) return reply.code(404).send({ error: "not found" });
+        // Force the user to sign in again with the new password everywhere.
+        await query(`delete from sessions where user_id = $1`, [req.params.id]);
+        return { ok: true };
       } catch (e: any) {
         if (e.code === "22P02") return reply.code(404).send({ error: "not found" });
         throw e;

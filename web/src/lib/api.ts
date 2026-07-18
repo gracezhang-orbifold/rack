@@ -82,7 +82,12 @@ export const api = {
     request<{ id: string; status: string }>(`/admin/service-requests/${encodeURIComponent(id)}/resolve`, post()),
   resolveAttention: (session_id: string) =>
     request<{ session_id: string; resolved: true }>(`/admin/attention/${encodeURIComponent(session_id)}/resolve`, post()),
+  changePassword: (current_password: string, new_password: string) =>
+    request<{ ok: true }>("/auth/change-password", post({ current_password, new_password })),
+
   adminUsers: () => request<AdminUser[]>("/admin/users"),
+  setUserPassword: (id: string, password: string) =>
+    request<{ ok: true }>(`/admin/users/${encodeURIComponent(id)}/password`, post({ password })),
   setUserRole: (id: string, role: "admin" | "user") =>
     request<AdminUser>(`/admin/users/${encodeURIComponent(id)}`, patch({ role })),
   adminAllowlist: () => request<AllowlistEntry[]>("/admin/allowlist"),
