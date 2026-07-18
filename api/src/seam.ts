@@ -30,6 +30,34 @@ async function seamPost(path: string, body: unknown): Promise<Response> {
   });
 }
 
+export interface AccessCodeResult {
+  ok: boolean;
+  code?: string;
+  error?: unknown;
+}
+
+// Mint a time-bound keypad code on the lock ("unlock later"). The code is
+// known immediately from the create response; the gateway programs it onto
+// the lock in the background.
+export async function createAccessCode(
+  deviceId: string, name: string, startsAt: Date, endsAt: Date,
+): Promise<AccessCodeResult> {
+  try {
+    const res = await seamPost("/access_codes/create", {
+      device_id: deviceId, name,
+      starts_at: startsAt.toISOString(), ends_at: endsAt.toISOString(),
+    });
+    if (!res.ok) {
+      return { ok: false, error: await res.json().catch(() => res.statusText) };
+    }
+    const code: string | undefined = (await res.json())?.access_code?.code;
+    if (!code) return { ok: false, error: "no code in Seam response" };
+    return { ok: true, code };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+}
+
 export async function unlockDoor(deviceId: string): Promise<UnlockResult> {
   try {
     const res = await seamPost("/locks/unlock_door", { device_id: deviceId });

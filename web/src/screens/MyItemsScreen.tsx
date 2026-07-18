@@ -204,6 +204,12 @@ export function MyItemsScreen() {
                 : b.is_overdue
                   ? <Badge tone="red">Overdue — due {fmt(b.due_at)}</Badge>
                   : <span className="text-xs text-muted">Due {fmt(b.due_at)}</span>}
+              {b.access_code && b.access_code_expires_at && new Date(b.access_code_expires_at) > new Date() && (
+                <p className="text-xs text-muted">
+                  Cabinet code <span className="font-mono font-semibold text-text">{b.access_code}</span>
+                  {" "}· works until {fmt(b.access_code_expires_at)}
+                </p>
+              )}
             </div>
             <button aria-label={`More options for ${b.item_name}`}
               className="min-h-[44px] min-w-[44px] rounded-xl text-xl font-bold text-muted active:bg-surface-2"

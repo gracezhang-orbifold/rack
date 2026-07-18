@@ -1,4 +1,4 @@
-// Tiny mock of the two Seam endpoints the backend uses (plus Resend's /emails),
+// Tiny mock of the Seam endpoints the backend uses (plus Resend's /emails),
 // for local smoke tests without Seam/Resend accounts.
 // Run: deno run --allow-net scripts/mock-seam.ts [port]
 // Set MOCK_SEAM_FAIL=1 to make every unlock fail (tests the compensation path).
@@ -26,6 +26,18 @@ Deno.serve({ port }, async (req) => {
         action_attempt_id: body.action_attempt_id,
         status: shouldFail ? "error" : "success",
         error: shouldFail ? { message: "mock unlock failure" } : undefined,
+      },
+    });
+  }
+
+  if (url.pathname === "/access_codes/create") {
+    if (shouldFail) return Response.json({ error: "mock access code failure" }, { status: 422 });
+    return Response.json({
+      access_code: {
+        access_code_id: `mock-ac-${crypto.randomUUID()}`,
+        code: "4321",
+        status: "setting",
+        device_id: body.device_id,
       },
     });
   }

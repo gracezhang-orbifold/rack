@@ -53,6 +53,8 @@ export interface ActiveBorrow {
   checked_out_at: string; due_at: string; is_overdue: boolean; unit_confirmed: boolean;
   return_questions: ReturnQuestion[];
   draft_answers: ReturnAnswers | null;
+  access_code: string | null;
+  access_code_expires_at: string | null;
 }
 export interface HistoryRow {
   session_id: string; item_name: string; asset_id: string | null; status: string;
@@ -61,7 +63,8 @@ export interface HistoryRow {
 export interface MyBorrows { active: ActiveBorrow[]; history: HistoryRow[]; }
 
 export interface BorrowResult {
-  session_id: string; item_unit_id: string; due_at: string; unlock: "ok" | "skipped";
+  session_id: string; item_unit_id: string; due_at: string; unlock: "ok" | "skipped" | "code";
+  access_code?: { code: string; ends_at: string };
   last_return: LastReturn | null; accessory: BorrowAccessory;
 }
 
