@@ -251,7 +251,7 @@ sql "
   delete from admin_allowlist where email like 'smoke-%';
   delete from sessions where user_id in (select id from profiles where email like 'smoke-%');
   delete from profiles where email like 'smoke-%';
-  delete from service_requests;
+  delete from service_requests where description like 'smoke:%';
   delete from device_events where borrow_session_id in (
     select s.id from borrow_sessions s
     join item_units u on u.id = s.item_unit_id
