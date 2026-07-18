@@ -242,6 +242,19 @@ check "bad role rejected" "400" "$(curl -s -o /dev/null -w '%{http_code}' -b "$A
 check "unknown user 404" "404" "$(curl -s -o /dev/null -w '%{http_code}' -b "$AJ" -X PATCH "$API/api/admin/users/not-a-uuid" -H 'Content-Type: application/json' -d '{"role":"user"}')"
 check "allowlist remove 404 when absent" "404" "$(curl -s -o /dev/null -w '%{http_code}' -b "$AJ" -X DELETE "$API/api/admin/allowlist/smoke-admin@rack.local")"
 
+echo "== Passwords"
+check "change with wrong current is 401" "401" "$(curl -s -o /dev/null -w '%{http_code}' -b "$SAJ" "$API/api/auth/change-password" -H 'Content-Type: application/json' -d '{"current_password":"nope","new_password":"newsecret9"}')"
+check "short new password is 400" "400" "$(curl -s -o /dev/null -w '%{http_code}' -b "$SAJ" "$API/api/auth/change-password" -H 'Content-Type: application/json' -d '{"current_password":"password123","new_password":"short"}')"
+check "change password works" "true" "$(curl -sb "$SAJ" "$API/api/auth/change-password" -H 'Content-Type: application/json' -d '{"current_password":"password123","new_password":"newsecret9"}' | jqv ok)"
+check "old password rejected" "401" "$(curl -s -o /dev/null -w '%{http_code}' "$API/api/auth/login" -H 'Content-Type: application/json' -d '{"email":"smoke-admin@rack.local","password":"password123"}')"
+check "new password logs in" "200" "$(curl -s -o /dev/null -w '%{http_code}' "$API/api/auth/login" -H 'Content-Type: application/json' -d '{"email":"smoke-admin@rack.local","password":"newsecret9"}')"
+check "changer session survives" "smoke-admin@rack.local" "$(curl -sb "$SAJ" "$API/api/me" | jqv email)"
+check "admin set-password self is 409" "409" "$(curl -s -o /dev/null -w '%{http_code}' -b "$AJ" "$API/api/admin/users/$ADMIN_ID/password" -H 'Content-Type: application/json' -d '{"password":"newsecret10"}')"
+check "admin set-password unknown 404" "404" "$(curl -s -o /dev/null -w '%{http_code}' -b "$AJ" "$API/api/admin/users/not-a-uuid/password" -H 'Content-Type: application/json' -d '{"password":"newsecret10"}')"
+check "admin sets user password" "true" "$(curl -sb "$AJ" "$API/api/admin/users/$SMOKE_ADMIN_ID/password" -H 'Content-Type: application/json' -d '{"password":"adminreset1"}' | jqv ok)"
+check "target sessions revoked" "401" "$(curl -s -o /dev/null -w '%{http_code}' -b "$SAJ" "$API/api/me")"
+check "admin-set password logs in" "200" "$(curl -s -o /dev/null -w '%{http_code}' "$API/api/auth/login" -H 'Content-Type: application/json' -d '{"email":"smoke-admin@rack.local","password":"adminreset1"}')"
+
 echo "== Cleanup"
 # Delete every 'Smoke *' type this run created via the admin API, so the dev
 # DB (and the admin UI's dropdowns) don't accumulate test litter. Cascade by

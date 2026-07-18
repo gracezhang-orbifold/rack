@@ -168,6 +168,11 @@ export function useAddAccessoryKit() {
   });
 }
 
+export const useChangePassword = () =>
+  useMutation({ mutationFn: (v: { current: string; next: string }) => api.changePassword(v.current, v.next) });
+export const useSetUserPassword = () =>
+  useMutation({ mutationFn: (v: { id: string; password: string }) => api.setUserPassword(v.id, v.password) });
+
 export const useAdminUsers = () => useQuery({ queryKey: ["admin-users"], queryFn: api.adminUsers });
 export function useSetUserRole() {
   const qc = useQueryClient();

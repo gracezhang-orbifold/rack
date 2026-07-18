@@ -1,9 +1,44 @@
 import { useState } from "react";
 import {
-  useAddAllowlist, useAdminAllowlist, useAdminUsers, useMe, useRemoveAllowlist, useSetUserRole,
+  useAddAllowlist, useAdminAllowlist, useAdminUsers, useMe, useRemoveAllowlist,
+  useSetUserPassword, useSetUserRole,
 } from "../hooks/queries";
-import { Badge, Button, Input, Spinner, useToast } from "../components/ui";
+import { Badge, Button, Input, Sheet, Spinner, useToast } from "../components/ui";
 import { errorMessage } from "../lib/borrowResult";
+import type { AdminUser } from "../lib/types";
+
+// Admin sets a user's password (e.g. "I forgot mine"); the user is signed
+// out everywhere and logs back in with it.
+function SetPasswordSheet({ user, onClose }: { user: AdminUser; onClose: () => void }) {
+  const setPassword = useSetUserPassword();
+  const toast = useToast();
+  const [password, setPassword_] = useState("");
+
+  const submit = () =>
+    setPassword.mutate({ id: user.id, password }, {
+      onSuccess: () => { toast(`Password set for ${user.full_name ?? user.email}.`); onClose(); },
+      onError: (err) => toast(errorMessage(err), "error"),
+    });
+
+  return (
+    <form className="flex flex-col gap-3" onSubmit={(e) => { e.preventDefault(); submit(); }}>
+      <div>
+        <h3 className="text-lg font-semibold">Set password</h3>
+        <p className="text-xs text-muted">
+          {user.email} will be signed out everywhere and must log in with the new password.
+        </p>
+      </div>
+      <Input type="password" autoComplete="new-password" placeholder="New password (8+ characters)"
+        value={password} onChange={(e) => setPassword_(e.target.value)} />
+      <div className="flex gap-2">
+        <Button type="button" variant="secondary" className="flex-1" onClick={onClose}>Cancel</Button>
+        <Button type="submit" className="flex-1" disabled={password.length < 8 || setPassword.isPending}>
+          {setPassword.isPending ? "Setting…" : "Set password"}
+        </Button>
+      </div>
+    </form>
+  );
+}
 
 function fmt(d: string) { return new Date(d).toLocaleDateString("en-US", { dateStyle: "medium" }); }
 
@@ -18,6 +53,7 @@ export function AdminPeopleScreen() {
   const removeInvite = useRemoveAllowlist();
   const toast = useToast();
   const [inviteEmail, setInviteEmail] = useState("");
+  const [passwordFor, setPasswordFor] = useState<string | null>(null);
 
   if (users.isLoading || allowlist.isLoading) return <Spinner />;
   if (users.isError || allowlist.isError)
@@ -62,10 +98,16 @@ export function AdminPeopleScreen() {
                 <td className="px-3 py-2 text-muted">{fmt(u.created_at)}</td>
                 <td className="px-3 py-2 text-right">
                   {u.id !== me.data?.id && (
-                    <button className="text-xs text-primary-soft underline" disabled={setRole.isPending}
-                      onClick={() => changeRole(u.id, u.role === "admin" ? "user" : "admin")}>
-                      {u.role === "admin" ? "Demote" : "Make admin"}
-                    </button>
+                    <span className="flex justify-end gap-3 whitespace-nowrap">
+                      <button className="text-xs text-muted underline"
+                        onClick={() => setPasswordFor(u.id)}>
+                        Set password
+                      </button>
+                      <button className="text-xs text-primary-soft underline" disabled={setRole.isPending}
+                        onClick={() => changeRole(u.id, u.role === "admin" ? "user" : "admin")}>
+                        {u.role === "admin" ? "Demote" : "Make admin"}
+                      </button>
+                    </span>
                   )}
                 </td>
               </tr>
@@ -106,6 +148,13 @@ export function AdminPeopleScreen() {
             </ul>
           )}
       </section>
+
+      <Sheet open={passwordFor !== null} onClose={() => setPasswordFor(null)}>
+        {passwordFor && (() => {
+          const u = users.data!.find((x) => x.id === passwordFor);
+          return u ? <SetPasswordSheet key={u.id} user={u} onClose={() => setPasswordFor(null)} /> : null;
+        })()}
+      </Sheet>
     </div>
   );
 }

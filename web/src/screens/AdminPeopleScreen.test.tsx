@@ -65,6 +65,28 @@ describe("AdminPeopleScreen", () => {
     });
   });
 
+  it("sets a user's password via the sheet", async () => {
+    const f = stubFetch((path, init) => {
+      if (path.endsWith("/api/admin/users/u2/password") && init?.method === "POST") return { ok: true };
+      return undefined;
+    });
+    wrap();
+    const userRow = (await screen.findByText("user@rack.local")).closest("tr")!;
+    expect(within((screen.getByText("admin@rack.local").closest("tr"))!).queryByText("Set password")).not.toBeInTheDocument();
+
+    await userEvent.click(within(userRow).getByText("Set password"));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.type(within(dialog).getByPlaceholderText(/new password \(8\+/i), "tempsecret1");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Set password" }));
+
+    await waitFor(() => {
+      const call = f.mock.calls.find(([u, i]) =>
+        String(u).endsWith("/api/admin/users/u2/password") && (i as RequestInit)?.method === "POST");
+      expect(call).toBeTruthy();
+      expect(JSON.parse((call![1] as RequestInit).body as string)).toEqual({ password: "tempsecret1" });
+    });
+  });
+
   it("adds and removes allowlist invites", async () => {
     const f = stubFetch((path, init) => {
       if (path.endsWith("/api/admin/allowlist") && init?.method === "POST")
