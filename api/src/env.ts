@@ -11,6 +11,9 @@ export const env = {
   SEAM_API_URL: req("SEAM_API_URL", "https://connect.getseam.com"),
   BREVO_API_KEY: req("BREVO_API_KEY", ""),
   BREVO_API_URL: req("BREVO_API_URL", "https://api.brevo.com"),
+  // When set (e.g. smtps://user:pass@smtp.gmail.com:465), SMTP is used for
+  // email delivery instead of the Brevo HTTP API.
+  SMTP_URL: req("SMTP_URL", ""),
   EMAIL_FROM: req("EMAIL_FROM", "Rack <ops@orbifold.ai>"),
   CRON_ENABLED: req("CRON_ENABLED", "true") === "true",
   NODE_ENV: req("NODE_ENV", "development"),
