@@ -7,16 +7,24 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import webpush from "web-push";
+import { vi } from "vitest";
 import { buildServer } from "../src/server.js";
 import { resetDb, pool } from "./helpers.js";
 
 // Real web-push crypto against a local mock push service: the subscription's
 // endpoint points at 127.0.0.1, so sendNotification's encrypted POST lands in
 // our hands. /gone answers 410 to exercise dead-subscription pruning.
+// Email (the fallback channel) is captured at the nodemailer boundary.
+const mail = vi.hoisted(() => ({ to: [] as string[] }));
+vi.mock("nodemailer", () => ({
+  default: {
+    createTransport: () => ({
+      sendMail: async (o: { to: string }) => { mail.to.push(o.to); return {}; },
+    }),
+  },
+}));
 let pushHits = 0;
-let emailsSent: string[] = [];
 let pushMock: Server;
-let resendMock: Server;
 
 function clientKeys() {
   const ecdh = createECDH("prime256v1");
@@ -34,7 +42,7 @@ describe("push notifications", () => {
     const vapid = webpush.generateVAPIDKeys();
     process.env.VAPID_PUBLIC_KEY = vapid.publicKey;
     process.env.VAPID_PRIVATE_KEY = vapid.privateKey;
-    process.env.BREVO_API_URL = "http://127.0.0.1:9915";
+    process.env.SMTP_URL = "smtps://mocked-by-vitest";
     // web-push always dials TLS, so the mock push service must speak HTTPS —
     // a throwaway self-signed cert plus disabling verification for this file.
     const certDir = mkdtempSync(join(tmpdir(), "rack-push-"));
@@ -50,15 +58,6 @@ describe("push notifications", () => {
       pushHits++;
       res.statusCode = 201; res.end();
     }).listen(9914);
-    resendMock = createServer((req, res) => {
-      let body = "";
-      req.on("data", (c) => (body += c));
-      req.on("end", () => {
-        emailsSent.push(JSON.parse(body).to[0].email);
-        res.setHeader("content-type", "application/json");
-        res.end(JSON.stringify({ id: "m1" }));
-      });
-    }).listen(9915);
     await resetDb(); app = await buildServer();
     const u = await app.inject({ method: "POST", url: "/api/auth/signup",
       payload: { email: "pushy@o.ai", password: "pw12345678" } });
@@ -68,7 +67,8 @@ describe("push notifications", () => {
     delete process.env.VAPID_PUBLIC_KEY;
     delete process.env.VAPID_PRIVATE_KEY;
     delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
-    pushMock.close(); resendMock.close();
+    delete process.env.SMTP_URL;
+    pushMock.close();
   });
 
   it("settings expose the VAPID key and accept a channel change", async () => {
@@ -105,7 +105,7 @@ describe("push notifications", () => {
     const run = await app.inject({ method: "POST", url: "/api/dev/run-reminders" });
     expect(run.json()).toMatchObject({ overdue_sessions: 1, users_emailed: 1 });
     expect(pushHits).toBe(1);
-    expect(emailsSent).toEqual([]);
+    expect(mail.to).toEqual([]);
   });
 
   it("prunes dead subscriptions and falls back to email", async () => {
@@ -114,7 +114,7 @@ describe("push notifications", () => {
       where status = 'active'`);
     const run = await app.inject({ method: "POST", url: "/api/dev/run-reminders" });
     expect(run.json()).toMatchObject({ overdue_sessions: 1, users_emailed: 1 });
-    expect(emailsSent).toEqual(["pushy@o.ai"]);
+    expect(mail.to).toEqual(["pushy@o.ai"]);
     const { rows } = await pool.query(`select count(*)::int n from push_subscriptions`);
     expect(rows[0].n).toBe(0);
   });
