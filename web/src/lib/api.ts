@@ -47,12 +47,15 @@ export const api = {
       ...(with_accessory ? { with_accessory: true } : {}),
       ...(access === "code" ? { access } : {}),
     })),
-  returnItem: (v: { session_id: string; asset_id?: string; damaged?: boolean; note?: string; answers?: ReturnAnswers }) =>
-    request<{ session_id: string; status: string; damaged: boolean; flagged: boolean }>("/return", post({
+  returnItem: (v: { session_id: string; asset_id?: string; damaged?: boolean; note?: string; answers?: ReturnAnswers;
+    access?: "unlock" | "code" }) =>
+    request<{ session_id: string; status: string; damaged: boolean; flagged: boolean;
+      access_code?: { code: string; ends_at: string } }>("/return", post({
       session_id: v.session_id,
       ...(v.asset_id ? { asset_id: v.asset_id } : {}),
       ...(v.damaged ? { damaged: true, note: v.note } : {}),
       ...(v.answers ? { answers: v.answers } : {}),
+      ...(v.access === "code" ? { access: v.access } : {}),
     })),
   extendBorrow: (session_id: string, days: number) =>
     request<{ session_id: string; due_at: string }>("/borrow/extend", post({ session_id, days })),

@@ -4,6 +4,7 @@ import { buildServer } from "../src/server.js";
 import { resetDb, pool } from "./helpers.js";
 
 let seamFail = false;
+let codesDeleted = 0;
 let mock: Server;
 
 function startMockSeam(port: number) {
@@ -19,7 +20,8 @@ function startMockSeam(port: number) {
           ? { action_attempt_id: "a1", status: "error", error: { message: "mock fail" } }
           : { action_attempt_id: "a1", status: "success" } }));
       if (req.url === "/access_codes/create")
-        return res.end(JSON.stringify({ access_code: { code: "9137" } }));
+        return res.end(JSON.stringify({ access_code: { code: "9137", access_code_id: "ac-1" } }));
+      if (req.url === "/access_codes/delete") { codesDeleted++; return res.end("{}"); }
       res.statusCode = 404; res.end("{}");
     });
   }).listen(port);
@@ -109,8 +111,24 @@ describe("borrow/return", () => {
     const events = await pool.query(
       `select count(*)::int n from device_events where borrow_session_id = $1`, [sid]);
     expect(events.rows[0].n).toBe(4);
+    // opening the door revokes the now-unneeded keypad code
+    expect(codesDeleted).toBe(1);
+    const { rows: [s] } = await pool.query(
+      `select access_code, access_code_id from borrow_sessions where id = $1`, [sid]);
+    expect(s.access_code).toBeNull();
+    expect(s.access_code_id).toBeNull();
     await app.inject({ method: "POST", url: "/api/return",
       payload: { session_id: sid }, cookies: { rack_session: cookie } });
+  });
+  it("mints a return code instead of unlocking when asked", async () => {
+    const res = await borrow({ item_type_id: goproId });
+    expect(res.json().unlock).toBe("ok");
+    const sid = res.json().session_id;
+    const ret = await app.inject({ method: "POST", url: "/api/return",
+      payload: { session_id: sid, access: "code" }, cookies: { rack_session: cookie } });
+    expect(ret.statusCode).toBe(200);
+    expect(ret.json().status).toBe("returned");
+    expect(ret.json().access_code.code).toBe("9137");
   });
   it("manual unlock guards: 409 without a code, 404 for unknown sessions", async () => {
     const res = await borrow({ item_type_id: goproId });
