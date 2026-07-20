@@ -40,6 +40,40 @@ describe("reminders", () => {
     expect(mail.to).toHaveLength(1);
   });
 
+  it("sends an hour-level heads-up and a due-now reminder, each once", async () => {
+    const u = await app.inject({ method: "POST", url: "/api/auth/signup",
+      payload: { email: "soon@o.ai", password: "pw12345678" } });
+    const cookie = u.cookies.find((c) => c.name === "rack_session")!.value;
+    // 1-hour heads-up; loan due in 30 minutes (checked out long enough ago
+    // that the lead time fits inside the loan).
+    await app.inject({ method: "PATCH", url: "/api/me/settings",
+      payload: { remind_before_minutes: 60 }, cookies: { rack_session: cookie } });
+    const t = await pool.query(`select id from item_types where name = 'GoPro 12 Black'`);
+    const b = await app.inject({ method: "POST", url: "/api/borrow",
+      payload: { item_type_id: t.rows[0].id }, cookies: { rack_session: cookie } });
+    const sid = b.json().session_id;
+    await pool.query(`update borrow_sessions set due_at = now() + interval '30 minutes',
+      checked_out_at = now() - interval '2 hours' where id = $1`, [sid]);
+
+    const r1 = await app.inject({ method: "POST", url: "/api/dev/run-reminders" });
+    expect(r1.json()).toMatchObject({ pre_due_emailed: 1, due_now_notified: 0 });
+    expect(mail.to.at(-1)).toBe("soon@o.ai");
+    expect((await app.inject({ method: "POST", url: "/api/dev/run-reminders" }))
+      .json()).toMatchObject({ pre_due_emailed: 0 });
+
+    // Deadline passes: one due-now reminder, and no overdue nag in the same
+    // run (due-now counts as the first contact).
+    await pool.query(`update borrow_sessions set due_at = now() - interval '1 minute' where id = $1`, [sid]);
+    const before = mail.to.length;
+    const r2 = await app.inject({ method: "POST", url: "/api/dev/run-reminders" });
+    expect(r2.json()).toMatchObject({ due_now_notified: 1, users_emailed: 0 });
+    expect(mail.to.length).toBe(before + 1);
+    expect((await app.inject({ method: "POST", url: "/api/dev/run-reminders" }))
+      .json()).toMatchObject({ due_now_notified: 0, users_emailed: 0 });
+    await app.inject({ method: "POST", url: "/api/return",
+      payload: { session_id: sid }, cookies: { rack_session: cookie } });
+  });
+
   it("groups multiple overdue items for the same user into a single email", async () => {
     const u = await app.inject({ method: "POST", url: "/api/auth/signup",
       payload: { email: "late2@o.ai", password: "pw12345678" } });

@@ -20,7 +20,13 @@ function ReminderSettingsCard() {
   const settings = useSettings();
   const update = useUpdateSettings();
   const toast = useToast();
-  if (!settings.data || typeof settings.data.remind_before_days !== "number") return null;
+  // Custom heads-up editor state ("N hours/days before"); null = using a preset.
+  const [custom, setCustom] = useState<{ amount: string; unit: "hours" | "days" } | null>(null);
+  if (!settings.data || typeof settings.data.remind_before_minutes !== "number") return null;
+  const lead = settings.data.remind_before_minutes;
+  const customMinutes = custom ? Number(custom.amount) * (custom.unit === "days" ? 1440 : 60) : 0;
+  const customValid = custom !== null && Number.isInteger(Number(custom.amount))
+    && Number(custom.amount) >= 1 && customMinutes <= 14 * 1440;
   const save = (body: Parameters<typeof update.mutate>[0]) =>
     update.mutate(body, {
       onSuccess: () => toast("Reminder settings saved."),
@@ -62,15 +68,42 @@ function ReminderSettingsCard() {
       <label className="mb-2 flex items-center justify-between text-sm text-muted">
         Heads-up before due
         <select className="rounded-lg border border-edge px-2 py-1"
-          value={settings.data.remind_before_days} disabled={update.isPending}
-          onChange={(e) => save({ remind_before_days: Number(e.target.value) })}>
-          <option value={0}>Off</option>
-          <option value={1}>1 day before</option>
-          <option value={2}>2 days before</option>
-          <option value={3}>3 days before</option>
-          <option value={7}>1 week before</option>
+          value={custom ? "custom" : ["0", "60", "1440"].includes(String(lead)) ? String(lead) : "custom"}
+          disabled={update.isPending}
+          onChange={(e) => {
+            if (e.target.value === "custom") {
+              setCustom(lead > 0 && lead % 1440 === 0
+                ? { amount: String(lead / 1440), unit: "days" }
+                : { amount: String(Math.max(1, Math.round(lead / 60))), unit: "hours" });
+            } else {
+              setCustom(null);
+              save({ remind_before_minutes: Number(e.target.value) });
+            }
+          }}>
+          <option value="0">Off</option>
+          <option value="60">1 hour before</option>
+          <option value="1440">1 day before</option>
+          <option value="custom">Custom…</option>
         </select>
       </label>
+      {custom && (
+        <div className="mb-2 flex items-center justify-end gap-2 text-sm text-muted">
+          <input type="number" min={1} aria-label="Heads-up amount"
+            className="w-20 rounded-lg border border-edge px-2 py-1"
+            value={custom.amount}
+            onChange={(e) => setCustom({ ...custom, amount: e.target.value })} />
+          <select className="rounded-lg border border-edge px-2 py-1" aria-label="Heads-up unit"
+            value={custom.unit}
+            onChange={(e) => setCustom({ ...custom, unit: e.target.value as "hours" | "days" })}>
+            <option value="hours">hours before</option>
+            <option value="days">days before</option>
+          </select>
+          <Button variant="secondary" disabled={!customValid || update.isPending}
+            onClick={() => { save({ remind_before_minutes: customMinutes }); setCustom(null); }}>
+            Set
+          </Button>
+        </div>
+      )}
       <label className="flex items-center justify-between text-sm text-muted">
         Overdue reminders
         <select className="rounded-lg border border-edge px-2 py-1"
@@ -82,7 +115,9 @@ function ReminderSettingsCard() {
           <option value={7}>Weekly</option>
         </select>
       </label>
-      <p className="mt-2 text-xs text-muted/70">Reminders go out at 9:00 AM.</p>
+      <p className="mt-2 text-xs text-muted/70">
+        Reminders arrive within a few minutes of falling due; you also get one the moment an item is due.
+      </p>
     </div>
   );
 }
