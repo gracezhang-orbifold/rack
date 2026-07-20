@@ -253,6 +253,41 @@ export async function borrowRoutes(app: FastifyInstance) {
       }
     });
 
+  // Seam programs keypad codes onto the lock asynchronously (up to ~30 min
+  // on TTLock), so a borrower can be standing at the cabinet with a code the
+  // keypad doesn't know yet. Any active code checkout may open the door
+  // directly instead — same access the code itself would grant.
+  app.post<{ Params: { sessionId: string } }>(
+    "/api/borrow/:sessionId/unlock", { preHandler: requireUser }, async (req, reply) => {
+      let session;
+      try {
+        ({ rows: [session] } = await query(`
+          select id, status, user_id, item_unit_id, access_code
+          from borrow_sessions where id = $1`, [req.params.sessionId]));
+      } catch (e: any) {
+        if (e?.code === "22P02") return reply.code(404).send({ error: "session not found" });
+        throw e;
+      }
+      if (!session || session.user_id !== req.user!.id)
+        return reply.code(404).send({ error: "session not found" });
+      if (session.status !== "active")
+        return reply.code(409).send({ error: "session is not active" });
+      if (!session.access_code)
+        return reply.code(409).send({ error: "this loan has no door code — the cabinet was already unlocked at checkout" });
+      const lock = await lockForUnit(session.item_unit_id);
+      if (!lock)
+        return reply.code(409).send({ error: "no smart lock is configured for this cabinet" });
+      await logEvent({ lock_id: lock.id, session_id: session.id, user_id: req.user!.id,
+        type: "unlock_requested", detail: { purpose: "code_fallback" } });
+      const unlock = await unlockDoor(lock.seam_device_id);
+      await logEvent({ lock_id: lock.id, session_id: session.id, user_id: req.user!.id,
+        type: unlock.ok ? "unlock_succeeded" : "unlock_failed", attemptId: unlock.actionAttemptId,
+        detail: unlock.ok ? { purpose: "code_fallback" } : { purpose: "code_fallback", error: unlock.error } });
+      if (!unlock.ok)
+        return reply.code(502).send({ error: "cabinet did not unlock — please retry" });
+      return { session_id: session.id, unlocked: true };
+    });
+
   app.post<{ Body: { session_id?: string; asset_id?: string; damaged?: boolean; note?: string;
     answers?: ReturnAnswers } }>(
     "/api/return", { preHandler: requireUser }, async (req, reply) => {

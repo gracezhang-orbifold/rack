@@ -56,6 +56,37 @@ it("offers scan confirmation for an unconfirmed checkout", async () => {
   });
 });
 
+it("unlocks the cabinet from the menu for a code checkout", async () => {
+  const coded = {
+    ...DATA,
+    active: [{ ...DATA.active[0], is_overdue: false, access_code: "2477", access_code_expires_at: "2099-01-01T00:00:00Z" }],
+  };
+  const f = vi.fn().mockImplementation(async (url: RequestInfo | URL) => {
+    const path = String(url);
+    if (path.endsWith("/api/borrow/s1/unlock"))
+      return { ok: true, status: 200, json: async () => ({ session_id: "s1", unlocked: true }) };
+    if (path.endsWith("/api/my-borrows")) return { ok: true, status: 200, json: async () => coded };
+    return { ok: true, status: 200, json: async () => [] };
+  });
+  vi.stubGlobal("fetch", f);
+  wrap();
+
+  expect(await screen.findByText(/cabinet code/i)).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: /more options/i }));
+  await userEvent.click(await screen.findByRole("button", { name: "Unlock cabinet" }));
+
+  await waitFor(() =>
+    expect(f.mock.calls.some(([u]) => String(u).endsWith("/api/borrow/s1/unlock"))).toBe(true));
+});
+
+it("hides the unlock button for checkouts without a code", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve(DATA) }));
+  wrap();
+  await userEvent.click(await screen.findByRole("button", { name: /more options/i }));
+  expect(await screen.findByRole("button", { name: "Return" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Unlock cabinet" })).not.toBeInTheDocument();
+});
+
 it("requires the label scan to return a labeled unit", async () => {
   const labeled = {
     ...DATA,

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import {
   useConfirmBorrow, useExtend, useMyBorrows, useReturn, useSaveDraftAnswers,
-  useSettings, useUpdateSettings,
+  useSettings, useUnlockBorrow, useUpdateSettings,
 } from "../hooks/queries";
 import { Badge, Button, Sheet, Spinner, useToast } from "../components/ui";
 import { QrScanner } from "../components/QrScanner";
@@ -62,6 +62,7 @@ export function MyItemsScreen() {
   const saveDraft = useSaveDraftAnswers();
   const extend = useExtend();
   const confirmUnit = useConfirmBorrow();
+  const unlock = useUnlockBorrow();
   const toast = useToast();
   const [sheet, setSheet] = useState<{ kind: "menu" | "return" | "extend" | "confirm" | "questions"; b: ActiveBorrow } | null>(null);
   const [done, setDone] = useState(false);
@@ -264,6 +265,15 @@ export function MyItemsScreen() {
             <div className="flex flex-col gap-2">
               {!sheet.b.unit_confirmed && (
                 <Button onClick={() => open("confirm", sheet.b)}>Scan ID</Button>
+              )}
+              {sheet.b.access_code && (
+                <Button variant="secondary" disabled={unlock.isPending}
+                  onClick={() => unlock.mutate({ session_id: sheet.b.session_id }, {
+                    onSuccess: () => { toast("Cabinet unlocked — take the key."); close(); },
+                    onError: (e) => toast(e instanceof ApiError ? e.message : errorMessage(e), "error"),
+                  })}>
+                  {unlock.isPending ? "Unlocking…" : "Unlock cabinet"}
+                </Button>
               )}
               <Button variant="secondary" onClick={() => open("return", sheet.b)}>Return</Button>
               {(sheet.b.return_questions?.length ?? 0) > 0 && (

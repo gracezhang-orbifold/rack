@@ -56,6 +56,9 @@ export const api = {
     })),
   extendBorrow: (session_id: string, days: number) =>
     request<{ session_id: string; due_at: string }>("/borrow/extend", post({ session_id, days })),
+  unlockForBorrow: (session_id: string) =>
+    request<{ session_id: string; unlocked: true }>(
+      `/borrow/${encodeURIComponent(session_id)}/unlock`, post({})),
   mySettings: () => request<ReminderSettings>("/me/settings"),
   updateSettings: (body: Partial<ReminderSettings>) => request<ReminderSettings>("/me/settings", patch(body)),
   confirmBorrow: (session_id: string, asset_id: string) =>
