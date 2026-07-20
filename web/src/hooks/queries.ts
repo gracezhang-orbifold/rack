@@ -112,6 +112,11 @@ export function useReturn() {
     onSuccess: () => invalidateBorrowViews(qc),
   });
 }
+export function useUnlockBorrow() {
+  return useMutation({
+    mutationFn: (v: { session_id: string }) => api.unlockForBorrow(v.session_id),
+  });
+}
 export function useExtend() {
   const qc = useQueryClient();
   return useMutation({
