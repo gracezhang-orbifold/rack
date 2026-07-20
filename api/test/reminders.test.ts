@@ -1,27 +1,24 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { createServer, type Server } from "node:http";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { buildServer } from "../src/server.js";
 import { resetDb, pool } from "./helpers.js";
 
-let sent: string[] = [];
-let sentBodies: string[] = [];
-let mock: Server;
+// Capture outgoing mail at the nodemailer boundary — no SMTP server needed.
+const mail = vi.hoisted(() => ({ to: [] as string[], bodies: [] as string[] }));
+vi.mock("nodemailer", () => ({
+  default: {
+    createTransport: () => ({
+      sendMail: async (o: { to: string; html: string }) => {
+        mail.to.push(o.to); mail.bodies.push(o.html);
+        return {};
+      },
+    }),
+  },
+}));
 
 describe("reminders", () => {
   let app: Awaited<ReturnType<typeof buildServer>>;
   beforeAll(async () => {
-    process.env.BREVO_API_URL = "http://127.0.0.1:9913";
-    mock = createServer((req, res) => {
-      let body = "";
-      req.on("data", (c) => (body += c));
-      req.on("end", () => {
-        const parsed = JSON.parse(body);
-        sent.push(parsed.to[0].email);
-        sentBodies.push(parsed.htmlContent);
-        res.setHeader("content-type", "application/json");
-        res.end(JSON.stringify({ id: "m1" }));
-      });
-    }).listen(9913);
+    process.env.SMTP_URL = "smtps://mocked-by-vitest";
     await resetDb(); app = await buildServer();
     const u = await app.inject({ method: "POST", url: "/api/auth/signup",
       payload: { email: "late@o.ai", password: "pw12345678" } });
@@ -32,15 +29,15 @@ describe("reminders", () => {
     await pool.query(`update borrow_sessions set due_at = now() - interval '2 days',
       checked_out_at = now() - interval '9 days' where id = $1`, [b.json().session_id]);
   });
-  afterAll(() => mock.close());
+  afterAll(() => { delete process.env.SMTP_URL; });
 
   it("emails overdue users once, idempotently", async () => {
     const r1 = await app.inject({ method: "POST", url: "/api/dev/run-reminders" });
     expect(r1.json()).toMatchObject({ overdue_sessions: 1, users_emailed: 1 });
-    expect(sent).toEqual(["late@o.ai"]);
+    expect(mail.to).toEqual(["late@o.ai"]);
     const r2 = await app.inject({ method: "POST", url: "/api/dev/run-reminders" });
     expect(r2.json()).toMatchObject({ overdue_sessions: 0, users_emailed: 0 });
-    expect(sent).toHaveLength(1);
+    expect(mail.to).toHaveLength(1);
   });
 
   it("groups multiple overdue items for the same user into a single email", async () => {
@@ -58,11 +55,11 @@ describe("reminders", () => {
       checked_out_at = now() - interval '9 days' where id in ($1, $2)`,
       [b1.json().session_id, b2.json().session_id]);
 
-    const before = sentBodies.length;
+    const before = mail.bodies.length;
     const r = await app.inject({ method: "POST", url: "/api/dev/run-reminders" });
     expect(r.json()).toMatchObject({ overdue_sessions: 2, users_emailed: 1 });
 
-    const newBodies = sentBodies.slice(before);
+    const newBodies = mail.bodies.slice(before);
     expect(newBodies).toHaveLength(1);
     expect(newBodies[0]).toContain("Wrist Strap Mount");
     expect(newBodies[0]).toContain("AKASO Head Strap Mount");

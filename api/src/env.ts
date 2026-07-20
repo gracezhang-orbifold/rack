@@ -9,10 +9,8 @@ export const env = {
   SESSION_SECRET: req("SESSION_SECRET", "dev-secret"),
   SEAM_API_KEY: req("SEAM_API_KEY", ""),
   SEAM_API_URL: req("SEAM_API_URL", "https://connect.getseam.com"),
-  BREVO_API_KEY: req("BREVO_API_KEY", ""),
-  BREVO_API_URL: req("BREVO_API_URL", "https://api.brevo.com"),
-  // When set (e.g. smtps://user:pass@smtp.gmail.com:465), SMTP is used for
-  // email delivery instead of the Brevo HTTP API.
+  // e.g. smtps://user:pass@smtp.gmail.com:465; "log:" logs instead of
+  // sending (dev/smoke); empty disables email delivery.
   SMTP_URL: req("SMTP_URL", ""),
   EMAIL_FROM: req("EMAIL_FROM", "Rack <ops@orbifold.ai>"),
   CRON_ENABLED: req("CRON_ENABLED", "true") === "true",

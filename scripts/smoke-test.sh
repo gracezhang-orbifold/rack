@@ -3,7 +3,7 @@
 #   docker compose up -d db
 #   (cd api && npm run migrate -- --seed) && npx tsx scripts/seed-dev-users.ts
 #   deno run --allow-net --allow-env scripts/mock-seam.ts 9911 &
-#   SEAM_API_URL=http://127.0.0.1:9911 BREVO_API_URL=http://127.0.0.1:9911 \
+#   SEAM_API_URL=http://127.0.0.1:9911 SMTP_URL=log: \
 #     NODE_ENV=development npm --prefix api run dev &
 #   ./scripts/smoke-test.sh
 #
