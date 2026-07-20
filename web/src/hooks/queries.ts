@@ -71,8 +71,9 @@ function invalidateBorrowViews(qc: ReturnType<typeof useQueryClient>) {
 export function useBorrow() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (v: { item_type_id: string; days: number; unit_id?: string; with_accessory?: boolean; access?: "unlock" | "code" }) =>
-      api.borrow(v.item_type_id, v.days, v.unit_id, v.with_accessory, v.access),
+    mutationFn: (v: { item_type_id: string; days: number; unit_id?: string; with_accessory?: boolean;
+      access?: "unlock" | "code"; duration_seconds?: number }) =>
+      api.borrow(v.item_type_id, v.days, v.unit_id, v.with_accessory, v.access, v.duration_seconds),
     onSuccess: () => invalidateBorrowViews(qc),
   });
 }

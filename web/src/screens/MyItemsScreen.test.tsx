@@ -105,6 +105,60 @@ it("mints a return code when the checkbox is ticked", async () => {
   });
 });
 
+const SETTINGS = {
+  remind_before_days: 1, overdue_reminder_every_days: 1,
+  reminder_channel: "email", vapid_public_key: "QUJDREVGRw",
+};
+
+it("offers only email reminders when the browser can't do push", async () => {
+  const f = vi.fn().mockImplementation(async (url: RequestInfo | URL) => {
+    const path = String(url);
+    if (path.endsWith("/api/me/settings")) return { ok: true, status: 200, json: async () => SETTINGS };
+    if (path.endsWith("/api/my-borrows")) return { ok: true, status: 200, json: async () => DATA };
+    return { ok: true, status: 200, json: async () => [] };
+  });
+  vi.stubGlobal("fetch", f);
+  wrap();
+  expect(await screen.findByLabelText(/remind me by/i)).toBeInTheDocument();
+  // jsdom has no PushManager — exactly like un-installed iOS Safari
+  expect(screen.queryByRole("option", { name: /push notification/i })).not.toBeInTheDocument();
+});
+
+it("subscribes to push when that channel is chosen", async () => {
+  const subscribe = vi.fn().mockResolvedValue({
+    toJSON: () => ({ endpoint: "https://push.example/e1", keys: { p256dh: "p", auth: "a" } }),
+  });
+  Object.defineProperty(window.navigator, "serviceWorker", {
+    configurable: true,
+    value: { register: vi.fn(), ready: Promise.resolve({ pushManager: { subscribe } }) },
+  });
+  vi.stubGlobal("PushManager", class {});
+  vi.stubGlobal("Notification", { requestPermission: vi.fn().mockResolvedValue("granted") });
+  const f = vi.fn().mockImplementation(async (url: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(url);
+    if (path.endsWith("/api/me/settings") && init?.method === "PATCH")
+      return { ok: true, status: 200, json: async () => ({ ...SETTINGS, reminder_channel: "push" }) };
+    if (path.endsWith("/api/me/settings")) return { ok: true, status: 200, json: async () => SETTINGS };
+    if (path.endsWith("/api/push/subscriptions")) return { ok: true, status: 200, json: async () => ({ ok: true }) };
+    if (path.endsWith("/api/my-borrows")) return { ok: true, status: 200, json: async () => DATA };
+    return { ok: true, status: 200, json: async () => [] };
+  });
+  vi.stubGlobal("fetch", f);
+  wrap();
+
+  await userEvent.selectOptions(await screen.findByLabelText(/remind me by/i), "push");
+
+  await waitFor(() =>
+    expect(f.mock.calls.some(([u]) => String(u).endsWith("/api/push/subscriptions"))).toBe(true));
+  expect(subscribe).toHaveBeenCalled();
+  const patchCall = f.mock.calls.find(([u, i]) =>
+    String(u).endsWith("/api/me/settings") && (i as RequestInit)?.method === "PATCH");
+  expect(JSON.parse((patchCall![1] as RequestInit).body as string)).toEqual({ reminder_channel: "push" });
+
+  delete (window.navigator as { serviceWorker?: unknown }).serviceWorker;
+  vi.unstubAllGlobals();
+});
+
 it("hides the unlock button for checkouts without a code", async () => {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve(DATA) }));
   wrap();

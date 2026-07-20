@@ -40,12 +40,14 @@ export const api = {
 
   availability: () => request<AvailabilityItem[]>("/availability"),
   myBorrows: () => request<MyBorrows>("/my-borrows"),
-  borrow: (item_type_id: string, days: number, unit_id?: string, with_accessory?: boolean, access?: "unlock" | "code") =>
+  borrow: (item_type_id: string, days: number, unit_id?: string, with_accessory?: boolean,
+    access?: "unlock" | "code", duration_seconds?: number) =>
     request<BorrowResult>("/borrow", post({
       item_type_id, days,
       ...(unit_id ? { unit_id } : {}),
       ...(with_accessory ? { with_accessory: true } : {}),
       ...(access === "code" ? { access } : {}),
+      ...(duration_seconds !== undefined ? { duration_seconds } : {}),
     })),
   returnItem: (v: { session_id: string; asset_id?: string; damaged?: boolean; note?: string; answers?: ReturnAnswers;
     access?: "unlock" | "code" }) =>
@@ -63,7 +65,12 @@ export const api = {
     request<{ session_id: string; unlocked: true }>(
       `/borrow/${encodeURIComponent(session_id)}/unlock`, post({})),
   mySettings: () => request<ReminderSettings>("/me/settings"),
-  updateSettings: (body: Partial<ReminderSettings>) => request<ReminderSettings>("/me/settings", patch(body)),
+  updateSettings: (body: Partial<Omit<ReminderSettings, "vapid_public_key">>) =>
+    request<ReminderSettings>("/me/settings", patch(body)),
+  pushSubscribe: (sub: { endpoint: string; keys: { p256dh: string; auth: string } }) =>
+    request<{ ok: true }>("/push/subscriptions", post(sub)),
+  pushUnsubscribe: (endpoint: string) =>
+    request<{ ok: true }>("/push/subscriptions", { method: "DELETE", body: JSON.stringify({ endpoint }) }),
   confirmBorrow: (session_id: string, asset_id: string) =>
     request<{ session_id: string; item_unit_id: string; asset_id: string; confirmed: true }>(
       "/borrow/confirm", post({ session_id, asset_id })),

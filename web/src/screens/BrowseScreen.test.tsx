@@ -205,4 +205,57 @@ describe("BrowseScreen", () => {
     // no scanner step — pickup is later; confirmation happens from My Items
     expect(screen.queryByText(/scan the QR label/i)).not.toBeInTheDocument();
   });
+
+  it("checks out for 5 seconds via the test button", async () => {
+    const f = vi.fn().mockImplementation(async (url: RequestInfo | URL) => {
+      const path = String(url);
+      if (path.endsWith("/api/borrow"))
+        return { ok: true, status: 200, json: async () => ({
+          session_id: "s1", item_unit_id: "u1", due_at: "2026-07-20T00:00:05Z", unlock: "ok",
+          last_return: null,
+        }) };
+      if (path.endsWith("/api/availability")) return { ok: true, status: 200, json: async () => AVAIL };
+      return { ok: true, status: 200, json: async () => [] };
+    });
+    vi.stubGlobal("fetch", f);
+    wrap();
+    await screen.findByText("GoPro 13 Black");
+    await userEvent.click(screen.getAllByRole("button", { name: "Borrow" })[0]);
+    await userEvent.click(await screen.findByRole("button", { name: /check out for 5 seconds/i }));
+    await userEvent.click(screen.getByRole("button", { name: /confirm & unlock/i }));
+    await userEvent.click(await screen.findByRole("button", { name: "Unlock now" }));
+
+    const call = f.mock.calls.find(([u]) => String(u).endsWith("/api/borrow"));
+    expect(JSON.parse((call![1] as RequestInit).body as string)).toEqual({
+      item_type_id: "t1", days: 7, duration_seconds: 5,
+    });
+  });
+
+  it("checks out for a custom number of hours", async () => {
+    const f = vi.fn().mockImplementation(async (url: RequestInfo | URL) => {
+      const path = String(url);
+      if (path.endsWith("/api/borrow"))
+        return { ok: true, status: 200, json: async () => ({
+          session_id: "s1", item_unit_id: "u1", due_at: "2026-07-20T03:00:00Z", unlock: "ok",
+          last_return: null,
+        }) };
+      if (path.endsWith("/api/availability")) return { ok: true, status: 200, json: async () => AVAIL };
+      return { ok: true, status: 200, json: async () => [] };
+    });
+    vi.stubGlobal("fetch", f);
+    wrap();
+    await screen.findByText("GoPro 13 Black");
+    await userEvent.click(screen.getAllByRole("button", { name: "Borrow" })[0]);
+    await userEvent.click(screen.getByRole("button", { name: "hrs" }));
+    // hours empty → confirm disabled until a valid number is typed
+    expect(screen.getByRole("button", { name: /confirm & unlock/i })).toBeDisabled();
+    await userEvent.type(screen.getByPlaceholderText(/how many hours/i), "3");
+    await userEvent.click(screen.getByRole("button", { name: /confirm & unlock/i }));
+    await userEvent.click(await screen.findByRole("button", { name: "Unlock now" }));
+
+    const call = f.mock.calls.find(([u]) => String(u).endsWith("/api/borrow"));
+    expect(JSON.parse((call![1] as RequestInit).body as string)).toEqual({
+      item_type_id: "t1", days: 7, duration_seconds: 3 * 3600,
+    });
+  });
 });

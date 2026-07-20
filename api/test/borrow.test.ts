@@ -145,6 +145,16 @@ describe("borrow/return", () => {
     await app.inject({ method: "POST", url: "/api/return",
       payload: { session_id: sid }, cookies: { rack_session: cookie } });
   });
+  it("honors a custom duration in seconds and bounds it", async () => {
+    const res = await borrow({ item_type_id: goproId, duration_seconds: 5 });
+    expect(res.statusCode).toBe(200);
+    const due = new Date(res.json().due_at).getTime();
+    expect(Math.abs(due - (Date.now() + 5_000))).toBeLessThan(5_000);
+    await app.inject({ method: "POST", url: "/api/return",
+      payload: { session_id: res.json().session_id }, cookies: { rack_session: cookie } });
+    expect((await borrow({ item_type_id: goproId, duration_seconds: 3 })).statusCode).toBe(400);
+    expect((await borrow({ item_type_id: goproId, duration_seconds: 100 * 86400 })).statusCode).toBe(400);
+  });
   it("409 when no units available", async () => {
     const oculus = (await pool.query(`select id from item_types where name = 'Oculus'`)).rows[0].id;
     await borrow({ item_type_id: oculus });

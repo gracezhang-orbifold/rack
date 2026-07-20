@@ -6,6 +6,11 @@ import App from "./App";
 import { ToastProvider } from "./components/ui";
 import "./index.css";
 
+// Register the push service worker (no-op on browsers without support).
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/sw.js").catch(() => { /* push just stays unavailable */ });
+}
+
 const queryClient = new QueryClient({
   defaultOptions: { queries: { refetchOnWindowFocus: true, retry: 1, staleTime: 10_000 } },
 });
