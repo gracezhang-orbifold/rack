@@ -1,5 +1,5 @@
 import { query } from "./db.js";
-import { escapeHtml as esc, sendEmail } from "./resend.js";
+import { escapeHtml as esc, sendEmail } from "./mailer.js";
 
 // A unit of this item type just became available: fulfil every one-shot
 // "notify me" subscription, and ping whoever is first on the waitlist.

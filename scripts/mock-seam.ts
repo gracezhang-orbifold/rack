@@ -1,5 +1,5 @@
-// Tiny mock of the Seam endpoints the backend uses (plus Resend's /emails),
-// for local smoke tests without Seam/Resend accounts.
+// Tiny mock of the Seam endpoints the backend uses (plus Brevo's email endpoint),
+// for local smoke tests without Seam/Brevo accounts.
 // Run: deno run --allow-net scripts/mock-seam.ts [port]
 // Set MOCK_SEAM_FAIL=1 to make every unlock fail (tests the compensation path).
 
@@ -47,9 +47,9 @@ Deno.serve({ port }, async (req) => {
     return Response.json({});
   }
 
-  if (url.pathname === "/emails") {
-    console.log(`[mock resend] to=${JSON.stringify(body.to)} subject=${body.subject}`);
-    return Response.json({ id: `mock-email-${crypto.randomUUID()}` });
+  if (url.pathname === "/v3/smtp/email") {
+    console.log(`[mock brevo] to=${JSON.stringify(body.to)} subject=${body.subject}`);
+    return Response.json({ messageId: `mock-email-${crypto.randomUUID()}` });
   }
 
   return Response.json({ error: "unknown endpoint" }, { status: 404 });

@@ -1,6 +1,6 @@
 import cron from "node-cron";
 import { query } from "./db.js";
-import { escapeHtml as esc, sendEmail } from "./resend.js";
+import { escapeHtml as esc, sendEmail } from "./mailer.js";
 import { sendPushToUser } from "./push.js";
 
 // Deliver on the user's chosen channel. Push silently falls back to email —

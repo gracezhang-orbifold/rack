@@ -3,7 +3,7 @@ import { query } from "../db.js";
 import { requireUser } from "../auth.js";
 import { createAccessCode, deleteAccessCode, unlockDoor } from "../seam.js";
 import { processItemAvailability } from "../requests.js";
-import { escapeHtml as esc } from "../resend.js";
+import { escapeHtml as esc } from "../mailer.js";
 import { emailAdmins } from "../notify.js";
 import { validateAnswers, validateDraftAnswers, computeFlagged, renderAnswers,
   type ReturnQuestion, type ReturnAnswers, type AnswerPair } from "../questionnaire.js";
