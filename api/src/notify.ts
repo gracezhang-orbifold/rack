@@ -1,5 +1,5 @@
 import { query } from "./db.js";
-import { sendEmail } from "./resend.js";
+import { sendEmail } from "./mailer.js";
 
 // Best-effort admin broadcast — the caller's operation must not fail on email trouble.
 export async function emailAdmins(subject: string, html: string) {

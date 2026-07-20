@@ -34,7 +34,7 @@ describe("push notifications", () => {
     const vapid = webpush.generateVAPIDKeys();
     process.env.VAPID_PUBLIC_KEY = vapid.publicKey;
     process.env.VAPID_PRIVATE_KEY = vapid.privateKey;
-    process.env.RESEND_API_URL = "http://127.0.0.1:9915";
+    process.env.BREVO_API_URL = "http://127.0.0.1:9915";
     // web-push always dials TLS, so the mock push service must speak HTTPS —
     // a throwaway self-signed cert plus disabling verification for this file.
     const certDir = mkdtempSync(join(tmpdir(), "rack-push-"));
@@ -54,7 +54,7 @@ describe("push notifications", () => {
       let body = "";
       req.on("data", (c) => (body += c));
       req.on("end", () => {
-        emailsSent.push(JSON.parse(body).to[0]);
+        emailsSent.push(JSON.parse(body).to[0].email);
         res.setHeader("content-type", "application/json");
         res.end(JSON.stringify({ id: "m1" }));
       });

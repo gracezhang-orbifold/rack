@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { query } from "../db.js";
 import { requireUser, requireAdmin } from "../auth.js";
 import { emailAdmins } from "../notify.js";
-import { escapeHtml as esc } from "../resend.js";
+import { escapeHtml as esc } from "../mailer.js";
 
 export async function serviceRoutes(app: FastifyInstance) {
   // Raise: any user reports a problem with a labeled unit.

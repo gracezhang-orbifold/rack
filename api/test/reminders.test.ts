@@ -10,14 +10,14 @@ let mock: Server;
 describe("reminders", () => {
   let app: Awaited<ReturnType<typeof buildServer>>;
   beforeAll(async () => {
-    process.env.RESEND_API_URL = "http://127.0.0.1:9913";
+    process.env.BREVO_API_URL = "http://127.0.0.1:9913";
     mock = createServer((req, res) => {
       let body = "";
       req.on("data", (c) => (body += c));
       req.on("end", () => {
         const parsed = JSON.parse(body);
-        sent.push(parsed.to[0]);
-        sentBodies.push(parsed.html);
+        sent.push(parsed.to[0].email);
+        sentBodies.push(parsed.htmlContent);
         res.setHeader("content-type", "application/json");
         res.end(JSON.stringify({ id: "m1" }));
       });

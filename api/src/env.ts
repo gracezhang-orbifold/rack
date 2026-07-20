@@ -9,9 +9,9 @@ export const env = {
   SESSION_SECRET: req("SESSION_SECRET", "dev-secret"),
   SEAM_API_KEY: req("SEAM_API_KEY", ""),
   SEAM_API_URL: req("SEAM_API_URL", "https://connect.getseam.com"),
-  RESEND_API_KEY: req("RESEND_API_KEY", ""),
-  RESEND_API_URL: req("RESEND_API_URL", "https://api.resend.com"),
-  EMAIL_FROM: req("EMAIL_FROM", "Rack <onboarding@resend.dev>"),
+  BREVO_API_KEY: req("BREVO_API_KEY", ""),
+  BREVO_API_URL: req("BREVO_API_URL", "https://api.brevo.com"),
+  EMAIL_FROM: req("EMAIL_FROM", "Rack <ops@orbifold.ai>"),
   CRON_ENABLED: req("CRON_ENABLED", "true") === "true",
   NODE_ENV: req("NODE_ENV", "development"),
   // Web push (VAPID). Leave unset to disable push — reminders fall back to email.
