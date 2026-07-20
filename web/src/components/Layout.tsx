@@ -1,12 +1,14 @@
-import { Link, Outlet } from "react-router-dom";
+import { Link, Outlet, useLocation } from "react-router-dom";
 import type { Me } from "../lib/types";
 import { TabBar } from "./TabBar";
+import { AdminNav } from "./AdminNav";
 import { Sidebar } from "./Sidebar";
 import { ThemeToggle } from "./ui";
 import { useLogout } from "../hooks/queries";
 
 export function Layout({ me }: { me: Me }) {
   const logout = useLogout();
+  const { pathname } = useLocation();
   return (
     <div className="mx-auto flex min-h-full max-w-md flex-col pb-16 md:max-w-6xl md:flex-row md:gap-6 md:px-4 md:pb-4 print:max-w-none print:pb-0">
       <Sidebar me={me} />
@@ -28,7 +30,10 @@ export function Layout({ me }: { me: Me }) {
             <button className="min-h-[44px] px-2 text-sm text-muted transition-colors md:hidden" onClick={() => logout.mutate()}>Sign out</button>
           </div>
         </header>
-        <main className="flex-1 px-4 md:px-0"><Outlet context={me} /></main>
+        <main className="flex-1 px-4 md:px-0">
+          {me.role === "admin" && pathname.startsWith("/admin") && <AdminNav />}
+          <Outlet context={me} />
+        </main>
       </div>
       <div className="print:hidden"><TabBar role={me.role} /></div>
     </div>
