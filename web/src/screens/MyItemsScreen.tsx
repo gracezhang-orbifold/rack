@@ -139,13 +139,15 @@ export function MyItemsScreen() {
   const [scanError, setScanError] = useState<string | null>(null);
   const [damaged, setDamaged] = useState(false);
   const [note, setNote] = useState("");
-  const [codeReturn, setCodeReturn] = useState(false);
+  // Labeled return: the scanned/typed asset id, held while the user picks
+  // how to open the cabinet (unlock now vs. keypad code).
+  const [returnAsset, setReturnAsset] = useState<string | null>(null);
   const [answers, setAnswers] = useState<ReturnAnswers>({});
 
   const open = (kind: "menu" | "return" | "extend" | "confirm" | "questions", b: ActiveBorrow) => {
     setSheet({ kind, b }); setDone(false); setDays(7);
     setManualId(""); setScanError(null);
-    setDamaged(false); setNote(""); setCodeReturn(false);
+    setDamaged(false); setNote(""); setReturnAsset(null);
     // Returning (or pre-answering) starts from any saved draft, so answers
     // only need confirming instead of retyping.
     setAnswers(kind === "return" || kind === "questions" ? ((b.draft_answers as ReturnAnswers) ?? {}) : {});
@@ -187,7 +189,7 @@ export function MyItemsScreen() {
     </div>
   );
 
-  const doReturn = (asset_id?: string) => {
+  const doReturn = (asset_id?: string, access?: "unlock" | "code") => {
     if (!sheet) return;
     const cleanAnswers = Object.fromEntries(
       Object.entries(answers)
@@ -196,15 +198,25 @@ export function MyItemsScreen() {
     ret.mutate({
       session_id: sheet.b.session_id, asset_id, damaged, note: note.trim() || undefined,
       answers: Object.keys(cleanAnswers).length ? cleanAnswers : undefined,
-      access: codeReturn ? "code" : undefined,
+      access: access === "code" ? "code" : undefined,
     }, {
       onSuccess: () => setDone(true),
       onError: (e) => {
         const msg = e instanceof ApiError ? e.message : errorMessage(e);
-        if (sheet.b.asset_id) { setScanError(msg); setScanKey((k) => k + 1); }
+        if (sheet.b.asset_id) { setReturnAsset(null); setScanError(msg); setScanKey((k) => k + 1); }
         else toast(msg, "error");
       },
     });
+  };
+  // Labeled returns capture the label first; the unlock-method choice follows.
+  const captureReturnAsset = (assetId: string) => {
+    if (sheet?.b.asset_id && assetId !== sheet.b.asset_id) {
+      setScanError(`That label doesn't match — this loan is for ${sheet.b.asset_id}.`);
+      setScanKey((k) => k + 1);
+      return;
+    }
+    setScanError(null);
+    setReturnAsset(assetId);
   };
   const doConfirmUnit = (asset_id: string) => {
     if (!sheet) return;
@@ -230,7 +242,7 @@ export function MyItemsScreen() {
     }
     setScanError(null);
     if (sheet?.kind === "confirm") doConfirmUnit(assetId);
-    else doReturn(assetId);
+    else captureReturnAsset(assetId);
   };
 
   const conditionFields = (
@@ -317,12 +329,15 @@ export function MyItemsScreen() {
               <>
                 <h3 className="mb-1 text-lg font-semibold">Your return code</h3>
                 <p className="my-4 font-mono text-4xl font-bold tracking-[0.3em]">{ret.data.access_code.code}</p>
-                <p className="mb-5 text-sm text-muted">
+                <p className="mb-2 text-sm text-muted">
                   Type it on the cabinet keypad, then press <span className="font-mono">#</span>, and put the item back.
                   Valid until {new Date(ret.data.access_code.ends_at).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}.
                   {damaged
                     ? " The admins have been notified and the unit is marked for repair."
                     : ret.data.flagged ? " Your notes were sent to the admins." : ""}
+                </p>
+                <p className="mb-5 text-xs text-muted/70">
+                  Heads-up: the code takes about 30 minutes to start working on the keypad.
                 </p>
               </>
             ) : (
@@ -417,27 +432,41 @@ export function MyItemsScreen() {
               {extend.isPending ? "Extending…" : "Extend loan"}
             </Button>
           </div>
+        ) : sheet?.kind === "return" && sheet.b.asset_id && returnAsset ? (
+          <div>
+            <h3 className="mb-1 text-lg font-semibold">Label confirmed</h3>
+            <p className="mb-4 text-sm text-muted">
+              <span className="font-mono">{returnAsset}</span> checks out. How do you want to open the cabinet?
+            </p>
+            <div className="flex flex-col gap-2">
+              <Button className="w-full" disabled={ret.isPending}
+                onClick={() => doReturn(returnAsset, "unlock")}>
+                {ret.isPending ? "Working…" : "Unlock now"}
+              </Button>
+              <Button variant="secondary" className="w-full" disabled={ret.isPending}
+                onClick={() => doReturn(returnAsset, "code")}>
+                Get a code to unlock later
+              </Button>
+              <p className="text-center text-xs text-muted/70">
+                A code works on the cabinet keypad for 24 hours, but takes about 30 minutes to start working.
+              </p>
+            </div>
+          </div>
         ) : sheet?.kind === "return" && sheet.b.asset_id ? (
           <div>
             <h3 className="mb-1 text-lg font-semibold">Return {sheet.b.item_name}?</h3>
             <p className="mb-3 text-sm text-muted">
-              Scan the label on the item (<span className="font-mono">{sheet.b.asset_id}</span>) to confirm,
-              then the cabinet will unlock.
+              Scan the label on the item (<span className="font-mono">{sheet.b.asset_id}</span>) to confirm.
             </p>
             {questionFields}
             {conditionFields}
-            <label className="mb-3 flex items-center gap-2 text-sm text-text">
-              <input type="checkbox" className="h-4 w-4" checked={codeReturn}
-                onChange={(e) => setCodeReturn(e.target.checked)} />
-              Get a keypad code instead — drop it off within 24 hours
-            </label>
             <QrScanner key={scanKey} onScan={onDecoded} />
             <div className="mt-3 flex gap-2">
               <input className="min-h-[44px] w-full rounded-xl border border-edge px-3 focus:border-primary focus:outline-none"
                 placeholder="…or type the asset ID" value={manualId}
                 onChange={(e) => setManualId(e.target.value)} />
               <Button variant="secondary" disabled={!parseAssetId(manualId) || returnIncomplete || ret.isPending}
-                onClick={() => doReturn(parseAssetId(manualId)!)}>
+                onClick={() => captureReturnAsset(parseAssetId(manualId)!)}>
                 {ret.isPending ? "…" : "Confirm"}
               </Button>
             </div>
@@ -446,18 +475,23 @@ export function MyItemsScreen() {
         ) : sheet ? (
           <div>
             <h3 className="mb-1 text-lg font-semibold">Return {sheet.b.item_name}?</h3>
-            <p className="mb-4 text-sm text-muted">The cabinet will unlock so you can put it back.</p>
+            <p className="mb-4 text-sm text-muted">How do you want to open the cabinet?</p>
             {questionFields}
             {conditionFields}
-            <label className="mb-3 flex items-center gap-2 text-sm text-text">
-              <input type="checkbox" className="h-4 w-4" checked={codeReturn}
-                onChange={(e) => setCodeReturn(e.target.checked)} />
-              Get a keypad code instead — drop it off within 24 hours
-            </label>
             {ret.isError && <p className="mb-3 text-sm text-danger">{errorMessage(ret.error)}</p>}
-            <Button className="w-full" disabled={ret.isPending || returnIncomplete} onClick={() => doReturn()}>
-              {ret.isPending ? "Working…" : codeReturn ? "Confirm & get code" : "Confirm & unlock"}
-            </Button>
+            <div className="flex flex-col gap-2">
+              <Button className="w-full" disabled={ret.isPending || returnIncomplete}
+                onClick={() => doReturn(undefined, "unlock")}>
+                {ret.isPending ? "Working…" : "Unlock now"}
+              </Button>
+              <Button variant="secondary" className="w-full" disabled={ret.isPending || returnIncomplete}
+                onClick={() => doReturn(undefined, "code")}>
+                Get a code to unlock later
+              </Button>
+              <p className="text-center text-xs text-muted/70">
+                A code works on the cabinet keypad for 24 hours, but takes about 30 minutes to start working.
+              </p>
+            </div>
           </div>
         ) : null}
       </Sheet>

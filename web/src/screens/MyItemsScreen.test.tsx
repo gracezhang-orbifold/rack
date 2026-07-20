@@ -79,7 +79,7 @@ it("unlocks the cabinet from the menu for a code checkout", async () => {
     expect(f.mock.calls.some(([u]) => String(u).endsWith("/api/borrow/s1/unlock"))).toBe(true));
 });
 
-it("mints a return code when the checkbox is ticked", async () => {
+it("mints a return code when unlock-later is chosen", async () => {
   const f = vi.fn().mockImplementation(async (url: RequestInfo | URL) => {
     const path = String(url);
     if (path.endsWith("/api/return"))
@@ -95,10 +95,10 @@ it("mints a return code when the checkbox is ticked", async () => {
 
   await userEvent.click(await screen.findByRole("button", { name: /more options/i }));
   await userEvent.click(await screen.findByRole("button", { name: "Return" }));
-  await userEvent.click(await screen.findByRole("checkbox", { name: /keypad code/i }));
-  await userEvent.click(screen.getByRole("button", { name: "Confirm & get code" }));
+  await userEvent.click(await screen.findByRole("button", { name: /get a code to unlock later/i }));
 
   expect(await screen.findByText("8642")).toBeInTheDocument();
+  expect(screen.getByText(/about 30 minutes to start working/i)).toBeInTheDocument();
   const call = f.mock.calls.find(([u]) => String(u).endsWith("/api/return"));
   expect(JSON.parse((call![1] as RequestInit).body as string)).toMatchObject({
     session_id: "s1", access: "code",
@@ -211,18 +211,45 @@ it("requires the label scan to return a labeled unit", async () => {
 
   await userEvent.click(await screen.findByRole("button", { name: /more options/i }));
   await userEvent.click(await screen.findByRole("button", { name: "Return" }));
-  // The sheet demands the label; the plain confirm button is absent.
+  // The sheet demands the label; no unlock choice until it's scanned.
   expect(await screen.findByText(/scan the label/i)).toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: /confirm & unlock/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Unlock now" })).not.toBeInTheDocument();
 
   await userEvent.type(screen.getByPlaceholderText(/type the asset id/i), "RACK-0044");
   await userEvent.click(screen.getByRole("button", { name: "Confirm" }));
+
+  // Label accepted → choose how to open the cabinet.
+  expect(await screen.findByText(/label confirmed/i)).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Unlock now" }));
 
   expect(await screen.findByText("Cabinet unlocked")).toBeInTheDocument();
   const returnCall = f.mock.calls.find(([u]) => String(u).endsWith("/api/return"));
   expect(JSON.parse((returnCall![1] as RequestInit).body as string)).toEqual({
     session_id: "s1", asset_id: "RACK-0044",
   });
+});
+
+it("rejects a mismatched label before offering the unlock choice", async () => {
+  const labeled = {
+    ...DATA,
+    active: [{ ...DATA.active[0], asset_id: "RACK-0044", unit_confirmed: true }],
+  };
+  const f = vi.fn().mockImplementation(async (url: RequestInfo | URL) => {
+    const path = String(url);
+    if (path.endsWith("/api/my-borrows")) return { ok: true, status: 200, json: async () => labeled };
+    return { ok: true, status: 200, json: async () => [] };
+  });
+  vi.stubGlobal("fetch", f);
+  wrap();
+
+  await userEvent.click(await screen.findByRole("button", { name: /more options/i }));
+  await userEvent.click(await screen.findByRole("button", { name: "Return" }));
+  await userEvent.type(await screen.findByPlaceholderText(/type the asset id/i), "RACK-0099");
+  await userEvent.click(screen.getByRole("button", { name: "Confirm" }));
+
+  expect(await screen.findByText(/that label doesn't match/i)).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Unlock now" })).not.toBeInTheDocument();
+  expect(f.mock.calls.some(([u]) => String(u).endsWith("/api/return"))).toBe(false);
 });
 
 it("asks return questions and blocks until every yes/no is answered", async () => {
@@ -247,7 +274,7 @@ it("asks return questions and blocks until every yes/no is answered", async () =
   await userEvent.click(await screen.findByRole("button", { name: "Return" }));
   expect(await screen.findByText("What's on the card?")).toBeInTheDocument();
 
-  const confirm = screen.getByRole("button", { name: /confirm & unlock/i });
+  const confirm = screen.getByRole("button", { name: "Unlock now" });
   expect(confirm).toBeDisabled(); // q2 unanswered
 
   await userEvent.type(screen.getByLabelText(/what's on the card/i), "beach shoot raws");
@@ -318,5 +345,5 @@ it("prefills the return sheet from a saved draft", async () => {
   // Draft answers arrive prefilled: text filled in, Yes pressed, submit enabled.
   expect(await screen.findByLabelText(/what's on the card/i)).toHaveValue("beach shoot raws");
   expect(screen.getByRole("button", { name: "Yes" })).toHaveAttribute("aria-pressed", "true");
-  expect(screen.getByRole("button", { name: /confirm & unlock/i })).toBeEnabled();
+  expect(screen.getByRole("button", { name: "Unlock now" })).toBeEnabled();
 });

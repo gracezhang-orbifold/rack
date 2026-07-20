@@ -188,6 +188,10 @@ export function BrowseScreen() {
               Type it on the cabinet keypad, then press <span className="font-mono">#</span>.
               Valid until {result.access_code ? new Date(result.access_code.ends_at).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" }) : ""}.
             </p>
+            <p className="mb-1 text-xs text-muted/70">
+              Heads-up: the code takes about 30 minutes to start working. Need in sooner?
+              Use <span className="font-medium">Unlock cabinet</span> from My Items.
+            </p>
             <p className="mb-5 text-xs text-muted/70">
               The code stays visible on My Items. After you pick the item up, scan its label from
               My Items — borrowing again is paused until you do.
@@ -268,7 +272,7 @@ export function BrowseScreen() {
                   Get a code to unlock later
                 </Button>
                 <p className="text-center text-xs text-muted/70">
-                  The code works on the cabinet keypad for 24 hours.
+                  A code works on the cabinet keypad for 24 hours, but takes about 30 minutes to start working.
                 </p>
               </div>
             ) : (
