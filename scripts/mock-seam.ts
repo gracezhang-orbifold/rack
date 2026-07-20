@@ -42,6 +42,11 @@ Deno.serve({ port }, async (req) => {
     });
   }
 
+  if (url.pathname === "/access_codes/delete") {
+    console.log(`[mock seam] deleted access code ${body.access_code_id}`);
+    return Response.json({});
+  }
+
   if (url.pathname === "/emails") {
     console.log(`[mock resend] to=${JSON.stringify(body.to)} subject=${body.subject}`);
     return Response.json({ id: `mock-email-${crypto.randomUUID()}` });

@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { query } from "../db.js";
 import { requireUser } from "../auth.js";
-import { createAccessCode, unlockDoor } from "../seam.js";
+import { createAccessCode, deleteAccessCode, unlockDoor } from "../seam.js";
 import { processItemAvailability } from "../requests.js";
 import { escapeHtml as esc } from "../resend.js";
 import { emailAdmins } from "../notify.js";
@@ -191,8 +191,8 @@ export async function borrowRoutes(app: FastifyInstance) {
           return reply.code(502).send({ error: "couldn't create a door code — item not checked out, please retry" });
         }
         await query(
-          `update borrow_sessions set access_code = $2, access_code_expires_at = $3 where id = $1`,
-          [session.session_id, minted.code, expiresAt]);
+          `update borrow_sessions set access_code = $2, access_code_expires_at = $3, access_code_id = $4 where id = $1`,
+          [session.session_id, minted.code, expiresAt, minted.accessCodeId ?? null]);
         return { ...session, unlock: "code",
           access_code: { code: minted.code, ends_at: expiresAt.toISOString() },
           last_return, accessory };
@@ -262,7 +262,7 @@ export async function borrowRoutes(app: FastifyInstance) {
       let session;
       try {
         ({ rows: [session] } = await query(`
-          select id, status, user_id, item_unit_id, access_code
+          select id, status, user_id, item_unit_id, access_code, access_code_id
           from borrow_sessions where id = $1`, [req.params.sessionId]));
       } catch (e: any) {
         if (e?.code === "22P02") return reply.code(404).send({ error: "session not found" });
@@ -285,14 +285,29 @@ export async function borrowRoutes(app: FastifyInstance) {
         detail: unlock.ok ? { purpose: "code_fallback" } : { purpose: "code_fallback", error: unlock.error } });
       if (!unlock.ok)
         return reply.code(502).send({ error: "cabinet did not unlock — please retry" });
+      // The door is open, so the keypad code has served its purpose — revoke
+      // it rather than leave a live code on the lock. Only forget it locally
+      // once Seam confirms, so My Items never hides a code that still works.
+      if (session.access_code_id) {
+        const del = await deleteAccessCode(session.access_code_id);
+        if (del.ok) {
+          await query(`update borrow_sessions
+            set access_code = null, access_code_expires_at = null, access_code_id = null
+            where id = $1`, [session.id]);
+        } else {
+          console.error("access code revoke failed for session", session.id, del.error);
+        }
+      }
       return { session_id: session.id, unlocked: true };
     });
 
   app.post<{ Body: { session_id?: string; asset_id?: string; damaged?: boolean; note?: string;
-    answers?: ReturnAnswers } }>(
+    answers?: ReturnAnswers; access?: string } }>(
     "/api/return", { preHandler: requireUser }, async (req, reply) => {
-      const { session_id, asset_id, damaged, note, answers } = req.body ?? {};
+      const { session_id, asset_id, damaged, note, answers, access = "unlock" } = req.body ?? {};
       if (!session_id) return reply.code(400).send({ error: "session_id is required" });
+      if (access !== "unlock" && access !== "code")
+        return reply.code(400).send({ error: "access must be unlock or code" });
       if (damaged !== undefined && typeof damaged !== "boolean")
         return reply.code(400).send({ error: "damaged must be a boolean" });
       if (note !== undefined && (typeof note !== "string" || note.length > 500))
@@ -328,7 +343,27 @@ export async function borrowRoutes(app: FastifyInstance) {
       if (answerErr) return reply.code(400).send({ error: answerErr });
       const flagged = computeFlagged(questions, ans);
       const lock = await lockForUnit(session.item_unit_id);
-      if (lock) {
+      // "Return later": mint a keypad code so the borrower can drop the item
+      // off within 24 hours. The return is recorded now — the unit becomes
+      // borrowable again, trusting the drop-off happens promptly.
+      let returnCode: { code: string; ends_at: string } | null = null;
+      if (lock && access === "code") {
+        const expiresAt = new Date(Date.now() + 24 * 3600_000);
+        await logEvent({ lock_id: lock.id, session_id: session.id, user_id: req.user!.id,
+          type: "unlock_requested", detail: { purpose: "return", method: "code" } });
+        const minted = await createAccessCode(
+          lock.seam_device_id, `Rack return ${session.id.slice(0, 8)}`, new Date(), expiresAt);
+        await logEvent({ lock_id: lock.id, session_id: session.id, user_id: req.user!.id,
+          type: minted.ok ? "unlock_succeeded" : "unlock_failed",
+          detail: minted.ok ? { purpose: "return", method: "code" }
+            : { purpose: "return", method: "code", error: minted.error } });
+        if (!minted.ok || !minted.code)
+          return reply.code(502).send({ error: "couldn't create a door code — item still checked out, please retry" });
+        await query(
+          `update borrow_sessions set access_code = $2, access_code_expires_at = $3, access_code_id = $4 where id = $1`,
+          [session.id, minted.code, expiresAt, minted.accessCodeId ?? null]);
+        returnCode = { code: minted.code, ends_at: expiresAt.toISOString() };
+      } else if (lock) {
         await logEvent({ lock_id: lock.id, session_id: session.id, user_id: req.user!.id,
           type: "unlock_requested", detail: { purpose: "return" } });
         const unlock = await unlockDoor(lock.seam_device_id);
@@ -363,7 +398,8 @@ export async function borrowRoutes(app: FastifyInstance) {
       if (flagged) {
         await notifyAdminsOfFlag(session.id, renderAnswers(questions, ans), req.user!);
       }
-      return { session_id: session.id, status: "returned", damaged: damaged ?? false, flagged };
+      return { session_id: session.id, status: "returned", damaged: damaged ?? false, flagged,
+        ...(returnCode ? { access_code: returnCode } : {}) };
     });
 
   // Pre-answer return questions from My Assets; the return sheet prefills

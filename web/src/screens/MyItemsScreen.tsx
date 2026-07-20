@@ -73,12 +73,13 @@ export function MyItemsScreen() {
   const [scanError, setScanError] = useState<string | null>(null);
   const [damaged, setDamaged] = useState(false);
   const [note, setNote] = useState("");
+  const [codeReturn, setCodeReturn] = useState(false);
   const [answers, setAnswers] = useState<ReturnAnswers>({});
 
   const open = (kind: "menu" | "return" | "extend" | "confirm" | "questions", b: ActiveBorrow) => {
     setSheet({ kind, b }); setDone(false); setDays(7);
     setManualId(""); setScanError(null);
-    setDamaged(false); setNote("");
+    setDamaged(false); setNote(""); setCodeReturn(false);
     // Returning (or pre-answering) starts from any saved draft, so answers
     // only need confirming instead of retyping.
     setAnswers(kind === "return" || kind === "questions" ? ((b.draft_answers as ReturnAnswers) ?? {}) : {});
@@ -129,6 +130,7 @@ export function MyItemsScreen() {
     ret.mutate({
       session_id: sheet.b.session_id, asset_id, damaged, note: note.trim() || undefined,
       answers: Object.keys(cleanAnswers).length ? cleanAnswers : undefined,
+      access: codeReturn ? "code" : undefined,
     }, {
       onSuccess: () => setDone(true),
       onError: (e) => {
@@ -245,14 +247,30 @@ export function MyItemsScreen() {
       <Sheet open={sheet !== null} onClose={close}>
         {done ? (
           <div className="text-center">
-            <h3 className="mb-1 text-lg font-semibold">{damaged ? "Damage reported" : "Cabinet unlocked"}</h3>
-            <p className="mb-5 text-sm text-muted">
-              {damaged
-                ? "Put the item back and close the door — the admins have been notified and the unit is marked for repair."
-                : ret.data?.flagged
-                  ? "Put the item back and close the door — your notes were sent to the admins."
-                  : "Put the item back and close the door."}
-            </p>
+            {ret.data?.access_code ? (
+              <>
+                <h3 className="mb-1 text-lg font-semibold">Your return code</h3>
+                <p className="my-4 font-mono text-4xl font-bold tracking-[0.3em]">{ret.data.access_code.code}</p>
+                <p className="mb-5 text-sm text-muted">
+                  Type it on the cabinet keypad, then press <span className="font-mono">#</span>, and put the item back.
+                  Valid until {new Date(ret.data.access_code.ends_at).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}.
+                  {damaged
+                    ? " The admins have been notified and the unit is marked for repair."
+                    : ret.data.flagged ? " Your notes were sent to the admins." : ""}
+                </p>
+              </>
+            ) : (
+              <>
+                <h3 className="mb-1 text-lg font-semibold">{damaged ? "Damage reported" : "Cabinet unlocked"}</h3>
+                <p className="mb-5 text-sm text-muted">
+                  {damaged
+                    ? "Put the item back and close the door — the admins have been notified and the unit is marked for repair."
+                    : ret.data?.flagged
+                      ? "Put the item back and close the door — your notes were sent to the admins."
+                      : "Put the item back and close the door."}
+                </p>
+              </>
+            )}
             <Button className="w-full" onClick={close}>Done</Button>
           </div>
         ) : sheet?.kind === "menu" ? (
@@ -342,6 +360,11 @@ export function MyItemsScreen() {
             </p>
             {questionFields}
             {conditionFields}
+            <label className="mb-3 flex items-center gap-2 text-sm text-text">
+              <input type="checkbox" className="h-4 w-4" checked={codeReturn}
+                onChange={(e) => setCodeReturn(e.target.checked)} />
+              Get a keypad code instead — drop it off within 24 hours
+            </label>
             <QrScanner key={scanKey} onScan={onDecoded} />
             <div className="mt-3 flex gap-2">
               <input className="min-h-[44px] w-full rounded-xl border border-edge px-3 focus:border-primary focus:outline-none"
@@ -360,9 +383,14 @@ export function MyItemsScreen() {
             <p className="mb-4 text-sm text-muted">The cabinet will unlock so you can put it back.</p>
             {questionFields}
             {conditionFields}
+            <label className="mb-3 flex items-center gap-2 text-sm text-text">
+              <input type="checkbox" className="h-4 w-4" checked={codeReturn}
+                onChange={(e) => setCodeReturn(e.target.checked)} />
+              Get a keypad code instead — drop it off within 24 hours
+            </label>
             {ret.isError && <p className="mb-3 text-sm text-danger">{errorMessage(ret.error)}</p>}
             <Button className="w-full" disabled={ret.isPending || returnIncomplete} onClick={() => doReturn()}>
-              {ret.isPending ? "Unlocking…" : "Confirm & unlock"}
+              {ret.isPending ? "Working…" : codeReturn ? "Confirm & get code" : "Confirm & unlock"}
             </Button>
           </div>
         ) : null}

@@ -33,6 +33,7 @@ async function seamPost(path: string, body: unknown): Promise<Response> {
 export interface AccessCodeResult {
   ok: boolean;
   code?: string;
+  accessCodeId?: string;
   error?: unknown;
 }
 
@@ -50,9 +51,23 @@ export async function createAccessCode(
     if (!res.ok) {
       return { ok: false, error: await res.json().catch(() => res.statusText) };
     }
-    const code: string | undefined = (await res.json())?.access_code?.code;
-    if (!code) return { ok: false, error: "no code in Seam response" };
-    return { ok: true, code };
+    const accessCode = (await res.json())?.access_code;
+    if (!accessCode?.code) return { ok: false, error: "no code in Seam response" };
+    return { ok: true, code: accessCode.code, accessCodeId: accessCode.access_code_id };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+}
+
+// Revoke a keypad code (e.g. the borrower opened the door another way and
+// the code shouldn't stay live on the lock).
+export async function deleteAccessCode(accessCodeId: string): Promise<{ ok: boolean; error?: unknown }> {
+  try {
+    const res = await seamPost("/access_codes/delete", { access_code_id: accessCodeId });
+    if (!res.ok) {
+      return { ok: false, error: await res.json().catch(() => res.statusText) };
+    }
+    return { ok: true };
   } catch (err) {
     return { ok: false, error: String(err) };
   }

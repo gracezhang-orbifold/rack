@@ -107,14 +107,17 @@ export function useAssignAssetIds() {
 export function useReturn() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (v: { session_id: string; asset_id?: string; damaged?: boolean; note?: string; answers?: ReturnAnswers }) =>
-      api.returnItem(v),
+    mutationFn: (v: { session_id: string; asset_id?: string; damaged?: boolean; note?: string; answers?: ReturnAnswers;
+      access?: "unlock" | "code" }) => api.returnItem(v),
     onSuccess: () => invalidateBorrowViews(qc),
   });
 }
 export function useUnlockBorrow() {
+  const qc = useQueryClient();
   return useMutation({
     mutationFn: (v: { session_id: string }) => api.unlockForBorrow(v.session_id),
+    // A successful unlock revokes the session's keypad code server-side.
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["my-borrows"] }),
   });
 }
 export function useExtend() {

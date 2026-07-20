@@ -79,6 +79,32 @@ it("unlocks the cabinet from the menu for a code checkout", async () => {
     expect(f.mock.calls.some(([u]) => String(u).endsWith("/api/borrow/s1/unlock"))).toBe(true));
 });
 
+it("mints a return code when the checkbox is ticked", async () => {
+  const f = vi.fn().mockImplementation(async (url: RequestInfo | URL) => {
+    const path = String(url);
+    if (path.endsWith("/api/return"))
+      return { ok: true, status: 200, json: async () => ({
+        session_id: "s1", status: "returned", damaged: false, flagged: false,
+        access_code: { code: "8642", ends_at: "2099-01-01T00:00:00Z" },
+      }) };
+    if (path.endsWith("/api/my-borrows")) return { ok: true, status: 200, json: async () => DATA };
+    return { ok: true, status: 200, json: async () => [] };
+  });
+  vi.stubGlobal("fetch", f);
+  wrap();
+
+  await userEvent.click(await screen.findByRole("button", { name: /more options/i }));
+  await userEvent.click(await screen.findByRole("button", { name: "Return" }));
+  await userEvent.click(await screen.findByRole("checkbox", { name: /keypad code/i }));
+  await userEvent.click(screen.getByRole("button", { name: "Confirm & get code" }));
+
+  expect(await screen.findByText("8642")).toBeInTheDocument();
+  const call = f.mock.calls.find(([u]) => String(u).endsWith("/api/return"));
+  expect(JSON.parse((call![1] as RequestInit).body as string)).toMatchObject({
+    session_id: "s1", access: "code",
+  });
+});
+
 it("hides the unlock button for checkouts without a code", async () => {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve(DATA) }));
   wrap();
