@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { query } from "../db.js";
 import { createSession, destroySession, hashPassword, readSessionId, requireUser, verifyPassword } from "../auth.js";
+import { pushPublicKey } from "../push.js";
 
 export async function authRoutes(app: FastifyInstance) {
   app.post<{ Body: { email?: string; password?: string; full_name?: string } }>(
@@ -69,25 +70,32 @@ export async function authRoutes(app: FastifyInstance) {
 
   app.get("/api/me/settings", { preHandler: requireUser }, async (req) => {
     const { rows } = await query(
-      `select remind_before_days, overdue_reminder_every_days from profiles where id = $1`,
+      `select remind_before_days, overdue_reminder_every_days, reminder_channel from profiles where id = $1`,
       [req.user!.id]);
-    return rows[0];
+    // The VAPID public key rides along so the client can both offer the push
+    // option (empty key = push not configured server-side) and subscribe.
+    return { ...rows[0], vapid_public_key: pushPublicKey() };
   });
 
-  app.patch<{ Body: { remind_before_days?: number; overdue_reminder_every_days?: number } }>(
+  app.patch<{ Body: { remind_before_days?: number; overdue_reminder_every_days?: number;
+    reminder_channel?: string } }>(
     "/api/me/settings", { preHandler: requireUser }, async (req, reply) => {
-      const { remind_before_days, overdue_reminder_every_days } = req.body ?? {};
+      const { remind_before_days, overdue_reminder_every_days, reminder_channel } = req.body ?? {};
       const intIn = (v: unknown, max: number) => Number.isInteger(v) && (v as number) >= 0 && (v as number) <= max;
       if (remind_before_days !== undefined && !intIn(remind_before_days, 14))
         return reply.code(400).send({ error: "remind_before_days must be 0-14" });
       if (overdue_reminder_every_days !== undefined && !intIn(overdue_reminder_every_days, 30))
         return reply.code(400).send({ error: "overdue_reminder_every_days must be 0-30" });
+      if (reminder_channel !== undefined && reminder_channel !== "email" && reminder_channel !== "push")
+        return reply.code(400).send({ error: "reminder_channel must be email or push" });
       const { rows } = await query(
         `update profiles set
            remind_before_days = coalesce($2, remind_before_days),
-           overdue_reminder_every_days = coalesce($3, overdue_reminder_every_days)
-         where id = $1 returning remind_before_days, overdue_reminder_every_days`,
-        [req.user!.id, remind_before_days ?? null, overdue_reminder_every_days ?? null]);
-      return rows[0];
+           overdue_reminder_every_days = coalesce($3, overdue_reminder_every_days),
+           reminder_channel = coalesce($4, reminder_channel)
+         where id = $1 returning remind_before_days, overdue_reminder_every_days, reminder_channel`,
+        [req.user!.id, remind_before_days ?? null, overdue_reminder_every_days ?? null,
+         reminder_channel ?? null]);
+      return { ...rows[0], vapid_public_key: pushPublicKey() };
     });
 }

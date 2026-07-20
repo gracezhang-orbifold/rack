@@ -14,6 +14,10 @@ export const env = {
   EMAIL_FROM: req("EMAIL_FROM", "Rack <onboarding@resend.dev>"),
   CRON_ENABLED: req("CRON_ENABLED", "true") === "true",
   NODE_ENV: req("NODE_ENV", "development"),
+  // Web push (VAPID). Leave unset to disable push — reminders fall back to email.
+  VAPID_PUBLIC_KEY: req("VAPID_PUBLIC_KEY", ""),
+  VAPID_PRIVATE_KEY: req("VAPID_PRIVATE_KEY", ""),
+  VAPID_SUBJECT: req("VAPID_SUBJECT", "mailto:grace@orbifold.ai"),
 };
 
 const insecureSessionSecrets = new Set(["dev-secret", "change-me-long-random"]);

@@ -1,6 +1,22 @@
 import cron from "node-cron";
 import { query } from "./db.js";
 import { escapeHtml as esc, sendEmail } from "./resend.js";
+import { sendPushToUser } from "./push.js";
+
+// Deliver on the user's chosen channel. Push silently falls back to email —
+// a stale or missing browser subscription must never mean a missed reminder.
+async function deliver(
+  user: { user_id: string; email: string; full_name: string | null; reminder_channel: string },
+  msg: { subject: string; html: string; push_title: string; push_body: string },
+): Promise<boolean> {
+  if (user.reminder_channel === "push") {
+    const pushed = await sendPushToUser(user.user_id,
+      { title: msg.push_title, body: msg.push_body, url: "/my-items" });
+    if (pushed) return true;
+  }
+  const result = await sendEmail({ to: user.email, subject: msg.subject, html: msg.html });
+  return result.ok;
+}
 
 export async function runReminders() {
   // Garbage-collect expired login sessions on the same daily cadence — no
@@ -13,7 +29,7 @@ export async function runReminders() {
   // day due to clock drift — same idea as the old fixed 20-hour guard.
   const { rows } = await query(`
     select s.id, s.user_id, s.due_at, s.reminder_count, p.email, p.full_name,
-           t.name as item_name
+           p.reminder_channel, t.name as item_name
     from borrow_sessions s
     join profiles p on p.id = s.user_id
     join item_units u on u.id = s.item_unit_id
@@ -26,18 +42,19 @@ export async function runReminders() {
   for (const r of rows) byUser.set(r.user_id, [...(byUser.get(r.user_id) ?? []), r]);
   let emailed = 0; const failures: string[] = [];
   for (const sessions of byUser.values()) {
-    const { email, full_name } = sessions[0];
+    const { email } = sessions[0];
     try {
       const items = sessions.map((s) =>
         `<li>${esc(s.item_name)} — due ${new Date(s.due_at).toLocaleDateString("en-US", { dateStyle: "medium" })}</li>`).join("");
-      const result = await sendEmail({
-        to: email,
+      const ok = await deliver(sessions[0], {
         subject: `Rack: you have ${sessions.length} overdue item${sessions.length > 1 ? "s" : ""}`,
-        html: `<p>Hi ${esc(full_name ?? "there")},</p>
+        html: `<p>Hi ${esc(sessions[0].full_name ?? "there")},</p>
 <p>The following borrowed equipment is overdue. Please return it to the cabinet:</p>
 <ul>${items}</ul><p>— Rack</p>`,
+        push_title: `${sessions.length} overdue item${sessions.length > 1 ? "s" : ""}`,
+        push_body: `${sessions.map((s) => s.item_name).join(", ")} — please return to the cabinet.`,
       });
-      if (result.ok) {
+      if (ok) {
         emailed++;
         for (const s of sessions)
           await query(`update borrow_sessions set last_reminded_at = now(),
@@ -56,7 +73,8 @@ export async function runReminders() {
 // clears the stamp so the new deadline gets its own heads-up.
 async function runPreDueReminders() {
   const { rows } = await query(`
-    select s.id, s.user_id, s.due_at, p.email, p.full_name, t.name as item_name
+    select s.id, s.user_id, s.due_at, p.email, p.full_name, p.reminder_channel,
+           t.name as item_name
     from borrow_sessions s
     join profiles p on p.id = s.user_id
     join item_units u on u.id = s.item_unit_id
@@ -69,19 +87,22 @@ async function runPreDueReminders() {
   for (const r of rows) byUser.set(r.user_id, [...(byUser.get(r.user_id) ?? []), r]);
   let emailed = 0;
   for (const sessions of byUser.values()) {
-    const { email, full_name } = sessions[0];
+    const { email } = sessions[0];
     try {
       const items = sessions.map((s) =>
         `<li>${esc(s.item_name)} — due ${new Date(s.due_at).toLocaleDateString("en-US", { dateStyle: "medium" })}</li>`).join("");
-      const result = await sendEmail({
-        to: email,
+      const ok = await deliver(sessions[0], {
         subject: `Rack: ${sessions.length === 1 ? `${sessions[0].item_name} is` : `${sessions.length} items are`} due back soon`,
-        html: `<p>Hi ${esc(full_name ?? "there")},</p>
+        html: `<p>Hi ${esc(sessions[0].full_name ?? "there")},</p>
 <p>A heads-up that the following borrowed equipment is due back soon.
 Return it to the cabinet, or extend the loan in Rack if you still need it:</p>
 <ul>${items}</ul><p>— Rack</p>`,
+        push_title: sessions.length === 1
+          ? `${sessions[0].item_name} is due back soon`
+          : `${sessions.length} items are due back soon`,
+        push_body: `${sessions.map((s) => s.item_name).join(", ")} — return or extend in Rack.`,
       });
-      if (result.ok) {
+      if (ok) {
         emailed++;
         for (const s of sessions)
           await query(`update borrow_sessions set pre_reminded_at = now() where id = $1`, [s.id]);
@@ -101,7 +122,8 @@ async function runReservationReminders() {
     where kind = 'reservation' and status = 'active'
       and start_at + make_interval(days => days) < now()`);
   const { rows } = await query(`
-    select r.id, r.start_at, r.days, p.email, p.full_name, t.name as item_name
+    select r.id, r.user_id, r.start_at, r.days, p.email, p.full_name,
+           p.reminder_channel, t.name as item_name
     from item_requests r
     join profiles p on p.id = r.user_id
     join item_types t on t.id = r.item_type_id
@@ -110,14 +132,16 @@ async function runReservationReminders() {
   let emailed = 0;
   for (const r of rows) {
     try {
-      const result = await sendEmail({
-        to: r.email,
+      const startsOn = new Date(r.start_at).toLocaleDateString("en-US", { dateStyle: "medium" });
+      const result = { ok: await deliver(r, {
         subject: `Rack: your reservation for ${r.item_name} starts soon`,
         html: `<p>Hi ${esc(r.full_name ?? "there")},</p>
 <p>Your reservation for <strong>${esc(r.item_name)}</strong> starts
-${new Date(r.start_at).toLocaleDateString("en-US", { dateStyle: "medium" })}
+${startsOn}
 (${r.days} day${r.days > 1 ? "s" : ""}). Check it out in Rack when you pick it up.</p><p>— Rack</p>`,
-      });
+        push_title: `Your ${r.item_name} reservation starts soon`,
+        push_body: `Starts ${startsOn} (${r.days} day${r.days > 1 ? "s" : ""}) — check it out in Rack.`,
+      }) };
       if (result.ok) {
         emailed++;
         await query(`update item_requests set notified_at = now() where id = $1`, [r.id]);

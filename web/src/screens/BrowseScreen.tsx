@@ -31,6 +31,8 @@ export function BrowseScreen() {
   const [q, setQ] = useState("");
   const [selected, setSelected] = useState<AvailabilityItem | null>(null);
   const [days, setDays] = useState(7);
+  const [durationMode, setDurationMode] = useState<"days" | "hours" | "test5s">("days");
+  const [hours, setHours] = useState("");
   const [result, setResult] = useState<BorrowResult | null>(null);
   const [confirmedAsset, setConfirmedAsset] = useState<string | null>(null);
   const [confirmedKitAsset, setConfirmedKitAsset] = useState<string | null>(null);
@@ -62,6 +64,7 @@ export function BrowseScreen() {
 
   const openSheet = (item: AvailabilityItem) => {
     setSelected(item); setDays(7); setResult(null);
+    setDurationMode("days"); setHours("");
     setConfirmedAsset(null); setManualId(""); setScanError(null);
     setConfirmedKitAsset(null); setWithKit(false); setChooseAccess(false);
     borrow.reset(); confirmUnit.reset();
@@ -100,9 +103,13 @@ export function BrowseScreen() {
     confirmAsset(assetId);
   };
 
+  const hoursValid = Number.isInteger(Number(hours)) && Number(hours) >= 1 && Number(hours) <= 90 * 24;
+  const durationValid = durationMode !== "hours" || hoursValid;
   const confirm = (access: "unlock" | "code") => {
     if (!selected) return;
-    borrow.mutate({ item_type_id: selected.item_type_id, days,
+    const duration_seconds = durationMode === "hours" ? Number(hours) * 3600
+      : durationMode === "test5s" ? 5 : undefined;
+    borrow.mutate({ item_type_id: selected.item_type_id, days, duration_seconds,
       with_accessory: kitOffer && withKit ? true : undefined, access }, {
       onSuccess: (r) => { setResult(r); setChooseAccess(false); },
       onError: (e) => {
@@ -221,14 +228,29 @@ export function BrowseScreen() {
           <div>
             <h3 className="mb-1 text-lg font-semibold">Borrow {selected.name}</h3>
             <p className="mb-4 text-sm text-muted">How long do you need it?</p>
-            <div className="mb-4 flex gap-2">
+            <div className="mb-2 flex gap-2">
               {DAY_PRESETS.map((d) => (
-                <button key={d} onClick={() => setDays(d)}
-                  className={`min-h-[44px] flex-1 rounded-xl border ${days === d ? "border-primary bg-primary text-on-primary" : "border-edge"}`}>
+                <button key={d} onClick={() => { setDurationMode("days"); setDays(d); }}
+                  className={`min-h-[44px] flex-1 rounded-xl border ${durationMode === "days" && days === d ? "border-primary bg-primary text-on-primary" : "border-edge"}`}>
                   {d}d
                 </button>
               ))}
+              <button onClick={() => setDurationMode("hours")}
+                className={`min-h-[44px] flex-1 rounded-xl border ${durationMode === "hours" ? "border-primary bg-primary text-on-primary" : "border-edge"}`}>
+                hrs
+              </button>
             </div>
+            {durationMode === "hours" && (
+              <div className="mb-2 flex items-center gap-2">
+                <Input type="number" min={1} max={90 * 24} placeholder="How many hours?"
+                  value={hours} onChange={(e) => setHours(e.target.value)} />
+                <span className="shrink-0 text-sm text-muted">hours</span>
+              </div>
+            )}
+            <button className="mb-4 block text-xs text-muted/60 underline"
+              onClick={() => setDurationMode(durationMode === "test5s" ? "days" : "test5s")}>
+              {durationMode === "test5s" ? "✓ 5-second checkout armed — tap to undo" : "Check out for 5 seconds (test)"}
+            </button>
             {kitOffer && (
               <label className="mb-4 flex items-center gap-2 text-sm text-text">
                 <input type="checkbox" className="h-4 w-4" checked={withKit}
@@ -239,10 +261,10 @@ export function BrowseScreen() {
             {borrow.isError && <p className="mb-3 text-sm text-danger">{errorMessage(borrow.error)}</p>}
             {chooseAccess ? (
               <div className="flex flex-col gap-2">
-                <Button className="w-full" disabled={borrow.isPending} onClick={() => confirm("unlock")}>
+                <Button className="w-full" disabled={borrow.isPending || !durationValid} onClick={() => confirm("unlock")}>
                   {borrow.isPending ? "Working…" : "Unlock now"}
                 </Button>
-                <Button variant="secondary" className="w-full" disabled={borrow.isPending} onClick={() => confirm("code")}>
+                <Button variant="secondary" className="w-full" disabled={borrow.isPending || !durationValid} onClick={() => confirm("code")}>
                   Get a code to unlock later
                 </Button>
                 <p className="text-center text-xs text-muted/70">
@@ -250,7 +272,7 @@ export function BrowseScreen() {
                 </p>
               </div>
             ) : (
-              <Button className="w-full" onClick={() => setChooseAccess(true)}>
+              <Button className="w-full" disabled={!durationValid} onClick={() => setChooseAccess(true)}>
                 Confirm & unlock
               </Button>
             )}

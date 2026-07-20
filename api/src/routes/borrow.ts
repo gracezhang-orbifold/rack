@@ -65,14 +65,20 @@ async function logEvent(e: { lock_id?: string; session_id: string; user_id: stri
 }
 
 export async function borrowRoutes(app: FastifyInstance) {
-  app.post<{ Body: { item_type_id?: string; days?: number; unit_id?: string; with_accessory?: boolean; access?: string } }>(
+  app.post<{ Body: { item_type_id?: string; days?: number; unit_id?: string; with_accessory?: boolean;
+    access?: string; duration_seconds?: number } }>(
     "/api/borrow", { preHandler: requireUser }, async (req, reply) => {
-      const { item_type_id, days, unit_id, with_accessory, access = "unlock" } = req.body ?? {};
+      const { item_type_id, days, unit_id, with_accessory, access = "unlock", duration_seconds } = req.body ?? {};
       if (!item_type_id) return reply.code(400).send({ error: "item_type_id is required" });
       if (with_accessory !== undefined && typeof with_accessory !== "boolean")
         return reply.code(400).send({ error: "with_accessory must be a boolean" });
       if (access !== "unlock" && access !== "code")
         return reply.code(400).send({ error: "access must be unlock or code" });
+      // Sub-day loans (custom hours; the 5-second test checkout). The floor of
+      // 5 exists purely for that test button.
+      if (duration_seconds !== undefined
+        && (!Number.isInteger(duration_seconds) || duration_seconds < 5 || duration_seconds > 90 * 86400))
+        return reply.code(400).send({ error: "duration_seconds must be 5 seconds to 90 days" });
       // A checkout whose label scan was skipped blocks further borrowing —
       // the database doesn't know which physical unit the user actually has.
       const { rows: pending } = await query(`
@@ -98,11 +104,21 @@ export async function borrowRoutes(app: FastifyInstance) {
       let session;
       try {
         const { rows } = await query(`select * from borrow_unit($1, $2, $3, $4)`,
-          [req.user!.id, item_type_id, days ?? 7, unit_id ?? null]);
+          [req.user!.id, item_type_id,
+           duration_seconds !== undefined ? Math.max(1, Math.ceil(duration_seconds / 86400)) : days ?? 7,
+           unit_id ?? null]);
         session = rows[0];
       } catch (e: any) {
         const status = /no units available|not available/.test(e.message) ? 409 : 400;
         return reply.code(status).send({ error: e.message.replace(/^.*?: /, "") });
+      }
+      // borrow_unit only stamps whole days; a custom duration re-stamps the
+      // due date at second precision.
+      if (duration_seconds !== undefined) {
+        const { rows: [restamped] } = await query(
+          `update borrow_sessions set due_at = checked_out_at + make_interval(secs => $2)
+           where id = $1 returning due_at`, [session.session_id, duration_seconds]);
+        session.due_at = restamped.due_at;
       }
       // Companion kit: claim a unit of the type's linked accessory type in
       // the same request — a second client call would trip the unconfirmed-

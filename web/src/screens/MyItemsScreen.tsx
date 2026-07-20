@@ -7,7 +7,8 @@ import { Badge, Button, Sheet, Spinner, useToast } from "../components/ui";
 import { QrScanner } from "../components/QrScanner";
 import { errorMessage } from "../lib/borrowResult";
 import { parseAssetId } from "../lib/scan";
-import { ApiError } from "../lib/api";
+import { api, ApiError } from "../lib/api";
+import { isIOS, isStandalone, pushSupported, subscribeToPush } from "../lib/push";
 import type { ActiveBorrow, ReturnAnswers } from "../lib/types";
 
 const EXTEND_PRESETS = [1, 3, 7, 14];
@@ -25,9 +26,39 @@ function ReminderSettingsCard() {
       onSuccess: () => toast("Reminder settings saved."),
       onError: (e) => toast(errorMessage(e), "error"),
     });
+  // Push is offered only where the browser can actually deliver it. On iOS
+  // the Push API exists solely inside an installed (Home Screen) PWA, so
+  // this check is also the "installed app only" gate.
+  const canPush = pushSupported() && Boolean(settings.data.vapid_public_key);
+  const chooseChannel = async (channel: "email" | "push") => {
+    if (channel === "email") return save({ reminder_channel: "email" });
+    try {
+      const sub = await subscribeToPush(settings.data!.vapid_public_key);
+      await api.pushSubscribe(sub);
+      save({ reminder_channel: "push" });
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "couldn't enable push notifications", "error");
+    }
+  };
   return (
     <div className="mt-6 rounded-xl bg-surface p-3 shadow-sm shadow-black/20">
-      <p className="mb-2 text-sm font-medium">Email reminders</p>
+      <p className="mb-2 text-sm font-medium">Reminders</p>
+      <label className="mb-2 flex items-center justify-between text-sm text-muted">
+        Remind me by
+        <select className="rounded-lg border border-edge px-2 py-1"
+          value={settings.data.reminder_channel} disabled={update.isPending}
+          onChange={(e) => chooseChannel(e.target.value as "email" | "push")}>
+          <option value="email">Email</option>
+          {(canPush || settings.data.reminder_channel === "push") && (
+            <option value="push">Push notification</option>
+          )}
+        </select>
+      </label>
+      {!canPush && isIOS() && !isStandalone() && (
+        <p className="mb-2 text-xs text-muted/70">
+          Want push notifications? Install Rack first (Share → Add to Home Screen), then pick push here.
+        </p>
+      )}
       <label className="mb-2 flex items-center justify-between text-sm text-muted">
         Heads-up before due
         <select className="rounded-lg border border-edge px-2 py-1"
@@ -51,7 +82,7 @@ function ReminderSettingsCard() {
           <option value={7}>Weekly</option>
         </select>
       </label>
-      <p className="mt-2 text-xs text-muted/70">Reminder emails go out at 9:00 AM.</p>
+      <p className="mt-2 text-xs text-muted/70">Reminders go out at 9:00 AM.</p>
     </div>
   );
 }
