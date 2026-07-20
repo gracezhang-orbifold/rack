@@ -106,9 +106,36 @@ it("mints a return code when the checkbox is ticked", async () => {
 });
 
 const SETTINGS = {
-  remind_before_days: 1, overdue_reminder_every_days: 1,
+  remind_before_minutes: 1440, overdue_reminder_every_days: 1,
   reminder_channel: "email", vapid_public_key: "QUJDREVGRw",
 };
+
+it("saves a custom heads-up lead time in hours", async () => {
+  const f = vi.fn().mockImplementation(async (url: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(url);
+    if (path.endsWith("/api/me/settings") && init?.method === "PATCH")
+      return { ok: true, status: 200, json: async () => ({ ...SETTINGS, remind_before_minutes: 180 }) };
+    if (path.endsWith("/api/me/settings")) return { ok: true, status: 200, json: async () => SETTINGS };
+    if (path.endsWith("/api/my-borrows")) return { ok: true, status: 200, json: async () => DATA };
+    return { ok: true, status: 200, json: async () => [] };
+  });
+  vi.stubGlobal("fetch", f);
+  wrap();
+
+  await userEvent.selectOptions(await screen.findByLabelText(/heads-up before due/i), "custom");
+  const amount = await screen.findByLabelText("Heads-up amount");
+  await userEvent.clear(amount);
+  await userEvent.type(amount, "3");
+  await userEvent.selectOptions(screen.getByLabelText("Heads-up unit"), "hours");
+  await userEvent.click(screen.getByRole("button", { name: "Set" }));
+
+  await waitFor(() => {
+    const call = f.mock.calls.find(([u, i]) =>
+      String(u).endsWith("/api/me/settings") && (i as RequestInit)?.method === "PATCH");
+    expect(call).toBeTruthy();
+    expect(JSON.parse((call![1] as RequestInit).body as string)).toEqual({ remind_before_minutes: 180 });
+  });
+});
 
 it("offers only email reminders when the browser can't do push", async () => {
   const f = vi.fn().mockImplementation(async (url: RequestInfo | URL) => {

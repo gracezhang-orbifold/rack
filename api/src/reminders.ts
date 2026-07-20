@@ -24,9 +24,12 @@ export async function runReminders() {
   await query(`delete from sessions where expires_at < now()`);
   const reservations = await runReservationReminders();
   const preDue = await runPreDueReminders();
+  // Due-now runs before the overdue pass: it stamps last_reminded_at, so the
+  // first overdue nag waits a full cadence instead of firing minutes later.
+  const dueNow = await runDueNowReminders();
   // Overdue nags honor each user's cadence (profiles.overdue_reminder_every_days;
-  // 0 = opted out). The 4-hour slack keeps a daily 09:00 run from skipping a
-  // day due to clock drift — same idea as the old fixed 20-hour guard.
+  // 0 = opted out). The cron runs every few minutes, so no slack is needed —
+  // each nag lands one exact cadence after the previous contact.
   const { rows } = await query(`
     select s.id, s.user_id, s.due_at, s.reminder_count, p.email, p.full_name,
            p.reminder_channel, t.name as item_name
@@ -37,7 +40,7 @@ export async function runReminders() {
     where s.status = 'active' and s.due_at < now()
       and p.overdue_reminder_every_days > 0
       and (s.last_reminded_at is null
-           or s.last_reminded_at < now() - make_interval(hours => p.overdue_reminder_every_days * 24 - 4))`);
+           or s.last_reminded_at < now() - make_interval(hours => p.overdue_reminder_every_days * 24))`);
   const byUser = new Map<string, typeof rows>();
   for (const r of rows) byUser.set(r.user_id, [...(byUser.get(r.user_id) ?? []), r]);
   let emailed = 0; const failures: string[] = [];
@@ -65,12 +68,60 @@ export async function runReminders() {
       failures.push(email);
     }
   }
-  return { overdue_sessions: rows.length, users_emailed: emailed, failures, ...reservations, ...preDue };
+  return { overdue_sessions: rows.length, users_emailed: emailed, failures,
+    ...reservations, ...preDue, ...dueNow };
 }
 
-// Heads-up before the due date, per the user's remind_before_days (0 = none).
-// One email per deadline: pre_reminded_at stamps it, and extending the loan
-// clears the stamp so the new deadline gets its own heads-up.
+// One reminder the moment a loan falls due. The 24-hour lookback keeps a
+// backlog of long-overdue sessions (from before this feature, or cron
+// downtime) from suddenly getting "now due" messages — the overdue nag
+// already covers those.
+async function runDueNowReminders() {
+  const { rows } = await query(`
+    select s.id, s.user_id, s.due_at, p.email, p.full_name, p.reminder_channel,
+           t.name as item_name
+    from borrow_sessions s
+    join profiles p on p.id = s.user_id
+    join item_units u on u.id = s.item_unit_id
+    join item_types t on t.id = u.item_type_id
+    where s.status = 'active' and s.due_reminded_at is null
+      and s.due_at <= now() and s.due_at > now() - interval '24 hours'`);
+  const byUser = new Map<string, typeof rows>();
+  for (const r of rows) byUser.set(r.user_id, [...(byUser.get(r.user_id) ?? []), r]);
+  let notified = 0;
+  for (const sessions of byUser.values()) {
+    const { email } = sessions[0];
+    try {
+      const items = sessions.map((s) => `<li>${esc(s.item_name)}</li>`).join("");
+      const ok = await deliver(sessions[0], {
+        subject: `Rack: ${sessions.length === 1 ? `${sessions[0].item_name} is` : `${sessions.length} items are`} now due`,
+        html: `<p>Hi ${esc(sessions[0].full_name ?? "there")},</p>
+<p>The following borrowed equipment is due back now.
+Return it to the cabinet, or extend the loan in Rack if you still need it:</p>
+<ul>${items}</ul><p>— Rack</p>`,
+        push_title: sessions.length === 1
+          ? `${sessions[0].item_name} is now due`
+          : `${sessions.length} items are now due`,
+        push_body: `${sessions.map((s) => s.item_name).join(", ")} — return or extend in Rack.`,
+      });
+      if (ok) {
+        notified++;
+        for (const s of sessions)
+          await query(`update borrow_sessions
+            set due_reminded_at = now(), last_reminded_at = now() where id = $1`, [s.id]);
+      }
+    } catch (err) {
+      console.error("due-now reminder failed for user", email, err);
+    }
+  }
+  return { due_now_notified: notified };
+}
+
+// Heads-up before the due date, per the user's remind_before_minutes
+// (0 = none). One per deadline: pre_reminded_at stamps it, and extending the
+// loan clears the stamp so the new deadline gets its own heads-up. The
+// checked_out_at guard skips loans shorter than the lead time — a heads-up
+// that would fire at checkout adds nothing over the due-now reminder.
 async function runPreDueReminders() {
   const { rows } = await query(`
     select s.id, s.user_id, s.due_at, p.email, p.full_name, p.reminder_channel,
@@ -80,9 +131,10 @@ async function runPreDueReminders() {
     join item_units u on u.id = s.item_unit_id
     join item_types t on t.id = u.item_type_id
     where s.status = 'active' and s.pre_reminded_at is null
-      and p.remind_before_days > 0
+      and p.remind_before_minutes > 0
       and s.due_at > now()
-      and s.due_at <= now() + make_interval(days => p.remind_before_days)`);
+      and s.due_at <= now() + make_interval(mins => p.remind_before_minutes)
+      and s.due_at - make_interval(mins => p.remind_before_minutes) >= s.checked_out_at`);
   const byUser = new Map<string, typeof rows>();
   for (const r of rows) byUser.set(r.user_id, [...(byUser.get(r.user_id) ?? []), r]);
   let emailed = 0;
@@ -154,10 +206,9 @@ ${startsOn}
 }
 
 export function startReminderCron() {
-  // Pin the schedule to a real timezone (not the container's UTC clock) so
-  // "9am" reminders actually land at 9am for the office, regardless of what
-  // TZ the host/container happens to be running.
-  cron.schedule("0 9 * * *", () => {
+  // Every 5 minutes: hour-level lead times ("1 hour before", due-now) can't
+  // wait for a daily run. Each pass is cheap — stamped rows don't re-send.
+  cron.schedule("*/5 * * * *", () => {
     runReminders().catch((err) => console.error("reminder run failed", err));
-  }, { timezone: process.env.TZ || "America/Los_Angeles" });
+  });
 }

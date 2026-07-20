@@ -24,7 +24,7 @@ export interface AttentionItem {
 }
 
 export interface ReminderSettings {
-  remind_before_days: number;
+  remind_before_minutes: number;
   overdue_reminder_every_days: number;
   reminder_channel: "email" | "push";
   vapid_public_key: string;
