@@ -182,6 +182,21 @@ export const useChangePassword = () =>
 export const useSetUserPassword = () =>
   useMutation({ mutationFn: (v: { id: string; password: string }) => api.setUserPassword(v.id, v.password) });
 
+export const useAdminApprovals = () => useQuery({ queryKey: ["admin-approvals"], queryFn: api.adminApprovals });
+export function useDecideApproval() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { id: string; decision: "approve" | "deny" }) => api.decideApproval(v.id, v.decision),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-approvals"] }),
+  });
+}
+export function useSetApprovalMode() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (mode: "auto" | "manual") => api.setApprovalMode(mode),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-approvals"] }),
+  });
+}
 export const useAdminUsers = () => useQuery({ queryKey: ["admin-users"], queryFn: api.adminUsers });
 export function useSetUserRole() {
   const qc = useQueryClient();

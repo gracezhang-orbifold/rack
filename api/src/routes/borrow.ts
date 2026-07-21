@@ -101,6 +101,45 @@ export async function borrowRoutes(app: FastifyInstance) {
         return reply.code(409).send({
           error: "you have an overdue item — return it or extend the deadline before borrowing again",
         });
+      // Approval gate. Auto mode records an instantly-granted approval and
+      // proceeds; manual mode requires an admin-approved request on file,
+      // consumed by this checkout, and queues one otherwise. A checkout that
+      // fails after consuming an approval hands it back.
+      let consumedApprovalId: string | null = null;
+      const restoreApproval = async () => {
+        if (!consumedApprovalId) return;
+        try {
+          await query(`update borrow_approvals set status = 'approved' where id = $1`,
+            [consumedApprovalId]);
+        } catch (err) {
+          console.error("approval restore failed", consumedApprovalId, err);
+        }
+      };
+      const { rows: [modeRow] } = await query(
+        `select value from app_settings where key = 'borrow_approval_mode'`);
+      if ((modeRow?.value ?? "auto") === "auto") {
+        await query(`insert into borrow_approvals (user_id, item_type_id, status, auto_approved, decided_at)
+          values ($1, $2, 'used', true, now())`, [req.user!.id, item_type_id]);
+      } else {
+        const { rows: [granted] } = await query(`
+          update borrow_approvals set status = 'used'
+          where id = (select id from borrow_approvals
+            where user_id = $1 and item_type_id = $2 and status = 'approved'
+            order by decided_at limit 1)
+          returning id`, [req.user!.id, item_type_id]);
+        consumedApprovalId = granted?.id ?? null;
+        if (!granted) {
+          await query(`
+            insert into borrow_approvals (user_id, item_type_id)
+            select $1, $2 where not exists (
+              select 1 from borrow_approvals
+              where user_id = $1 and item_type_id = $2 and status = 'pending')`,
+            [req.user!.id, item_type_id]);
+          return reply.code(409).send({
+            error: "this checkout needs admin approval — your request has been sent; try again once it's approved",
+          });
+        }
+      }
       let session;
       try {
         const { rows } = await query(`select * from borrow_unit($1, $2, $3, $4)`,
@@ -109,6 +148,7 @@ export async function borrowRoutes(app: FastifyInstance) {
            unit_id ?? null]);
         session = rows[0];
       } catch (e: any) {
+        await restoreApproval();
         const status = /no units available|not available/.test(e.message) ? 409 : 400;
         return reply.code(status).send({ error: e.message.replace(/^.*?: /, "") });
       }
@@ -189,6 +229,7 @@ export async function borrowRoutes(app: FastifyInstance) {
             console.error("cancel_borrow_session failed for session", id, err);
           }
         }
+        await restoreApproval();
       };
 
       if (access === "code") {

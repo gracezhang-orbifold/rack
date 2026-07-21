@@ -19,6 +19,7 @@ const ADMIN_ITEMS = [
   { to: "/admin/requests", label: "View Request", end: false },
   { to: "/admin/add", label: "Add Asset", end: false },
   { to: "/admin/service", label: "Under Service", end: false },
+  { to: "/admin/approvals", label: "Approvals", end: false },
   { to: "/admin/people", label: "People", end: false },
 ];
 

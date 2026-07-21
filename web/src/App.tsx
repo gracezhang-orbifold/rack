@@ -15,6 +15,7 @@ import { AdminRequestsScreen } from "./screens/AdminRequestsScreen";
 import { AdminAddScreen } from "./screens/AdminAddScreen";
 import { AdminServiceScreen } from "./screens/AdminServiceScreen";
 import { AdminPeopleScreen } from "./screens/AdminPeopleScreen";
+import { AdminApprovalsScreen } from "./screens/AdminApprovalsScreen";
 import { ProfileScreen } from "./screens/ProfileScreen";
 import { AdminInventoryScreen } from "./screens/AdminInventoryScreen";
 import { AdminLabelsScreen } from "./screens/AdminLabelsScreen";
@@ -53,6 +54,7 @@ export default function App() {
         <Route path="/admin/add" element={<AdminOnly me={me.data}><AdminAddScreen /></AdminOnly>} />
         <Route path="/admin/service" element={<AdminOnly me={me.data}><AdminServiceScreen /></AdminOnly>} />
         <Route path="/admin/people" element={<AdminOnly me={me.data}><AdminPeopleScreen /></AdminOnly>} />
+        <Route path="/admin/approvals" element={<AdminOnly me={me.data}><AdminApprovalsScreen /></AdminOnly>} />
         <Route path="/admin/labels" element={<AdminOnly me={me.data}><AdminLabelsScreen /></AdminOnly>} />
       </Route>
     </Routes>
