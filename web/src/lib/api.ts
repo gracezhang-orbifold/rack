@@ -1,7 +1,7 @@
 import type {
   Me, AvailabilityItem, MyBorrows, BorrowResult, AdminBorrows, AdminItemType, AdminUnit,
   ScannedUnit, ItemRequest, RequestKind, UnitHistoryRow, ReminderSettings, ServiceRequest, AdminServiceRequest,
-  AttentionItem, ReturnAnswers, ReturnQuestion, AdminUser, AllowlistEntry,
+  AttentionItem, ReturnAnswers, ReturnQuestion, AdminUser, AllowlistEntry, AdminApprovals,
 } from "./types";
 
 export class ApiError extends Error {
@@ -99,6 +99,11 @@ export const api = {
   changePassword: (current_password: string, new_password: string) =>
     request<{ ok: true }>("/auth/change-password", post({ current_password, new_password })),
 
+  adminApprovals: () => request<AdminApprovals>("/admin/approvals"),
+  decideApproval: (id: string, decision: "approve" | "deny") =>
+    request<{ ok: true }>(`/admin/approvals/${encodeURIComponent(id)}/decide`, post({ decision })),
+  setApprovalMode: (mode: "auto" | "manual") =>
+    request<{ mode: string }>("/admin/approval-mode", post({ mode })),
   adminUsers: () => request<AdminUser[]>("/admin/users"),
   setUserPassword: (id: string, password: string) =>
     request<{ ok: true }>(`/admin/users/${encodeURIComponent(id)}/password`, post({ password })),

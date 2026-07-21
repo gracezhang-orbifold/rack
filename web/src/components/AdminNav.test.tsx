@@ -8,7 +8,7 @@ it("links to every admin page, including People and Add Asset", () => {
   const hrefs = screen.getAllByRole("link").map((a) => a.getAttribute("href"));
   expect(hrefs).toEqual([
     "/admin", "/admin/assets", "/admin/assigned", "/admin/requests",
-    "/admin/add", "/admin/service", "/admin/people",
+    "/admin/add", "/admin/service", "/admin/approvals", "/admin/people",
   ]);
   expect(screen.getByRole("link", { name: "People" })).toBeInTheDocument();
 });

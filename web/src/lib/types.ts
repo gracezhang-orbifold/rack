@@ -104,6 +104,24 @@ export interface ServiceRequest {
 export interface AdminServiceRequest extends ServiceRequest {
   item_unit_id: string; unit_status: UnitStatus; email: string; full_name: string | null;
 }
+export interface ApprovalRequest {
+  id: string;
+  requested_at: string;
+  email: string;
+  full_name: string | null;
+  item_name: string;
+  status?: "approved" | "denied" | "used";
+  auto_approved?: boolean;
+  decided_at?: string | null;
+  decided_by_email?: string | null;
+}
+
+export interface AdminApprovals {
+  mode: "auto" | "manual";
+  pending: ApprovalRequest[];
+  recent: ApprovalRequest[];
+}
+
 export interface AdminUser {
   id: string; email: string; full_name: string | null; role: Role; created_at: string;
 }

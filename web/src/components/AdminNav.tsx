@@ -19,6 +19,7 @@ export function AdminNav() {
       <NavLink to="/admin/requests" className={chip}>Requests</NavLink>
       <NavLink to="/admin/add" className={chip}>Add Asset</NavLink>
       <NavLink to="/admin/service" className={chip}>Service</NavLink>
+      <NavLink to="/admin/approvals" className={chip}>Approvals</NavLink>
       <NavLink to="/admin/people" className={chip}>People</NavLink>
     </nav>
   );

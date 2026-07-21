@@ -2,7 +2,30 @@ import type { FastifyInstance } from "fastify";
 import { query } from "../db.js";
 import { hashPassword, requireAdmin } from "../auth.js";
 import { processItemAvailability } from "../requests.js";
+import { escapeHtml as esc, sendEmail } from "../mailer.js";
+import { sendPushToUser } from "../push.js";
 import { validateQuestions, renderAnswers, type ReturnQuestion, type ReturnAnswers } from "../questionnaire.js";
+
+// Tell a requester their checkout approval was decided, on their reminder
+// channel (push with email fallback, mirroring reminders).
+async function notifyApprovalDecision(userId: string, itemTypeId: string, approved: boolean) {
+  const { rows: [u] } = await query(
+    `select email, full_name, reminder_channel from profiles where id = $1`, [userId]);
+  const { rows: [t] } = await query(`select name from item_types where id = $1`, [itemTypeId]);
+  if (!u || !t) return;
+  const title = approved
+    ? `Your ${t.name} checkout was approved`
+    : `Your ${t.name} checkout request was denied`;
+  const body = approved
+    ? "Open Rack and check it out — the approval is waiting."
+    : "Talk to an admin if you think this is a mistake.";
+  if (u.reminder_channel === "push"
+    && await sendPushToUser(userId, { title, body, url: "/" })) return;
+  await sendEmail({
+    to: u.email, subject: `Rack: ${title}`,
+    html: `<p>Hi ${esc(u.full_name ?? "there")},</p><p>${esc(title)}. ${esc(body)}</p><p>— Rack</p>`,
+  });
+}
 
 // Give unlabeled, non-retired units sequential RACK-NNNN asset ids,
 // continuing from the highest existing number. Unit-creation endpoints pass
@@ -362,4 +385,56 @@ export async function adminRoutes(app: FastifyInstance) {
       if (!exists.rows[0]) return reply.code(404).send({ error: "not found" });
       return reply.code(409).send({ error: "unit has an active borrow session — return it instead" });
     });
+
+  // Checkout approvals: pending queue, recent decisions, and the auto/manual mode.
+  app.get("/api/admin/approvals", async () => {
+    const { rows: [mode] } = await query(
+      `select value from app_settings where key = 'borrow_approval_mode'`);
+    const { rows: pending } = await query(`
+      select a.id, a.requested_at, p.email, p.full_name, t.name as item_name
+      from borrow_approvals a
+      join profiles p on p.id = a.user_id
+      join item_types t on t.id = a.item_type_id
+      where a.status = 'pending' order by a.requested_at`);
+    const { rows: recent } = await query(`
+      select a.id, a.status, a.auto_approved, a.requested_at, a.decided_at,
+             p.email, p.full_name, t.name as item_name, d.email as decided_by_email
+      from borrow_approvals a
+      join profiles p on p.id = a.user_id
+      join item_types t on t.id = a.item_type_id
+      left join profiles d on d.id = a.decided_by
+      where a.status <> 'pending'
+      order by coalesce(a.decided_at, a.requested_at) desc limit 50`);
+    return { mode: mode?.value ?? "auto", pending, recent };
+  });
+
+  app.post<{ Params: { id: string }; Body: { decision?: string } }>(
+    "/api/admin/approvals/:id/decide", async (req, reply) => {
+      const { decision } = req.body ?? {};
+      if (decision !== "approve" && decision !== "deny")
+        return reply.code(400).send({ error: "decision must be approve or deny" });
+      let row;
+      try {
+        ({ rows: [row] } = await query(`
+          update borrow_approvals set status = $2, decided_at = now(), decided_by = $3
+          where id = $1 and status = 'pending'
+          returning user_id, item_type_id`,
+          [req.params.id, decision === "approve" ? "approved" : "denied", req.user!.id]));
+      } catch (e: any) {
+        if (e?.code === "22P02") return reply.code(404).send({ error: "approval not found" });
+        throw e;
+      }
+      if (!row) return reply.code(404).send({ error: "approval not found or already decided" });
+      notifyApprovalDecision(row.user_id, row.item_type_id, decision === "approve")
+        .catch((err) => console.error("approval notification failed", req.params.id, err));
+      return { ok: true };
+    });
+
+  app.post<{ Body: { mode?: string } }>("/api/admin/approval-mode", async (req, reply) => {
+    const { mode } = req.body ?? {};
+    if (mode !== "auto" && mode !== "manual")
+      return reply.code(400).send({ error: "mode must be auto or manual" });
+    await query(`update app_settings set value = $1 where key = 'borrow_approval_mode'`, [mode]);
+    return { mode };
+  });
 }
