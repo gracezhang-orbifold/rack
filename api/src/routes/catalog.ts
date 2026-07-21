@@ -47,6 +47,15 @@ export async function catalogRoutes(app: FastifyInstance) {
       join item_types t on t.id = u.item_type_id
       where s.user_id = $1 and s.status <> 'active'
       order by s.checked_out_at desc limit 50`, [req.user!.id]);
-    return { active: active.rows, history: history.rows };
+    // Checkout requests awaiting pickup (approved) or an admin decision
+    // (pending) — My Assets renders these above the active loans.
+    const approvals = await query(`
+      select a.id, a.status, a.requested_at, a.days, a.duration_seconds,
+             a.with_accessory, a.item_type_id, t.name as item_name
+      from borrow_approvals a
+      join item_types t on t.id = a.item_type_id
+      where a.user_id = $1 and a.status in ('pending', 'approved')
+      order by a.requested_at`, [req.user!.id]);
+    return { active: active.rows, history: history.rows, approvals: approvals.rows };
   });
 }

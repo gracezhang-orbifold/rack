@@ -40,6 +40,12 @@ export const api = {
 
   availability: () => request<AvailabilityItem[]>("/availability"),
   myBorrows: () => request<MyBorrows>("/my-borrows"),
+  requestBorrow: (body: { item_type_id: string; days?: number; duration_seconds?: number; with_accessory?: boolean }) =>
+    request<{ id: string; status: "pending" | "approved"; already_requested?: boolean }>("/borrow/request", post(body)),
+  cancelBorrowRequest: (id: string) =>
+    request<{ ok: true }>(`/borrow/request/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  pickupBorrow: (approval_id: string, access: "unlock" | "code") =>
+    request<BorrowResult>("/borrow", post({ approval_id, ...(access === "code" ? { access } : {}) })),
   borrow: (item_type_id: string, days: number, unit_id?: string, with_accessory?: boolean,
     access?: "unlock" | "code", duration_seconds?: number) =>
     request<BorrowResult>("/borrow", post({

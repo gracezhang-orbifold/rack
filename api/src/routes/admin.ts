@@ -17,7 +17,7 @@ async function notifyApprovalDecision(userId: string, itemTypeId: string, approv
     ? `Your ${t.name} checkout was approved`
     : `Your ${t.name} checkout request was denied`;
   const body = approved
-    ? "Open Rack and check it out — the approval is waiting."
+    ? "Open Rack — it's waiting for pickup on My Assets."
     : "Talk to an admin if you think this is a mistake.";
   if (u.reminder_channel === "push"
     && await sendPushToUser(userId, { title, body, url: "/" })) return;

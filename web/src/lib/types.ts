@@ -62,7 +62,18 @@ export interface HistoryRow {
   session_id: string; item_name: string; asset_id: string | null; status: string;
   checked_out_at: string; returned_at: string | null;
 }
-export interface MyBorrows { active: ActiveBorrow[]; history: HistoryRow[]; }
+export interface MyApproval {
+  id: string;
+  status: "pending" | "approved";
+  requested_at: string;
+  days: number | null;
+  duration_seconds: number | null;
+  with_accessory: boolean;
+  item_type_id: string;
+  item_name: string;
+}
+
+export interface MyBorrows { active: ActiveBorrow[]; history: HistoryRow[]; approvals: MyApproval[]; }
 
 export interface BorrowResult {
   session_id: string; item_unit_id: string; due_at: string; unlock: "ok" | "skipped" | "code";

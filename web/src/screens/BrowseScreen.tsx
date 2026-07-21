@@ -1,15 +1,13 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAvailability, useBorrow, useConfirmBorrow } from "../hooks/queries";
+import { useAvailability, useRequestBorrow } from "../hooks/queries";
 import { filterInventory, groupByCategory } from "../lib/filter";
-import { borrowResultMessage, errorMessage } from "../lib/borrowResult";
+import { errorMessage } from "../lib/borrowResult";
 import { parseAssetId } from "../lib/scan";
 import { Badge, Button, Input, Sheet, Spinner, useToast } from "../components/ui";
 import { RequestOptions } from "../components/RequestOptions";
 import { QrScanner } from "../components/QrScanner";
-import { LastReturnNotice } from "../components/LastReturnNotice";
-import { ApiError } from "../lib/api";
-import type { AvailabilityItem, BorrowResult } from "../lib/types";
+import type { AvailabilityItem } from "../lib/types";
 
 const DAY_PRESETS = [1, 3, 7, 14];
 
@@ -26,6 +24,9 @@ function AvailabilityPips({ available, total }: { available: number; total: numb
   );
 }
 
+// Browse asks for approval; the unlock (and label-scan confirmation) happens
+// from My Assets once the request is approved. Auto-approve mode grants
+// instantly, so usually it's request → straight to pickup.
 export function BrowseScreen() {
   const availability = useAvailability();
   const [q, setQ] = useState("");
@@ -33,20 +34,13 @@ export function BrowseScreen() {
   const [days, setDays] = useState(7);
   const [durationMode, setDurationMode] = useState<"days" | "hours" | "test5s">("days");
   const [hours, setHours] = useState("");
-  const [result, setResult] = useState<BorrowResult | null>(null);
-  const [confirmedAsset, setConfirmedAsset] = useState<string | null>(null);
-  const [confirmedKitAsset, setConfirmedKitAsset] = useState<string | null>(null);
   const [withKit, setWithKit] = useState(false);
-  const [chooseAccess, setChooseAccess] = useState(false);
-  const [manualId, setManualId] = useState("");
-  const [scanKey, setScanKey] = useState(0);
-  const [scanError, setScanError] = useState<string | null>(null);
+  const [requested, setRequested] = useState<{ status: "pending" | "approved"; already?: boolean } | null>(null);
   const [labelScan, setLabelScan] = useState(false);
   const [labelId, setLabelId] = useState("");
   const [labelScanKey, setLabelScanKey] = useState(0);
   const [labelScanError, setLabelScanError] = useState<string | null>(null);
-  const borrow = useBorrow();
-  const confirmUnit = useConfirmBorrow();
+  const request = useRequestBorrow();
   const toast = useToast();
   const navigate = useNavigate();
 
@@ -63,58 +57,24 @@ export function BrowseScreen() {
   };
 
   const openSheet = (item: AvailabilityItem) => {
-    setSelected(item); setDays(7); setResult(null);
-    setDurationMode("days"); setHours("");
-    setConfirmedAsset(null); setManualId(""); setScanError(null);
-    setConfirmedKitAsset(null); setWithKit(false); setChooseAccess(false);
-    borrow.reset(); confirmUnit.reset();
+    setSelected(item); setDays(7); setRequested(null);
+    setDurationMode("days"); setHours(""); setWithKit(false);
+    request.reset();
   };
-  const closeSheet = () => { setSelected(null); setResult(null); setConfirmedAsset(null); setConfirmedKitAsset(null); };
+  const closeSheet = () => { setSelected(null); setRequested(null); };
 
   const kitOffer = selected?.accessory && selected.accessory.available_units > 0 ? selected.accessory : null;
-  const kitSession = result?.accessory && "session_id" in result.accessory ? result.accessory : null;
-  const kitError = result?.accessory && "error" in result.accessory ? result.accessory.error : null;
-  // Which session the next scanned label confirms: camera first, then the kit.
-  const pendingSession = result && !confirmedAsset ? result.session_id
-    : kitSession && !confirmedKitAsset ? kitSession.session_id : null;
-
-  const confirmAsset = (assetId: string) => {
-    if (!pendingSession) return;
-    confirmUnit.mutate({ session_id: pendingSession, asset_id: assetId }, {
-      onSuccess: (r) => {
-        if (!confirmedAsset) setConfirmedAsset(r.asset_id);
-        else setConfirmedKitAsset(r.asset_id);
-        setManualId(""); setScanError(null); setScanKey((k) => k + 1);
-      },
-      onError: (e) => {
-        setScanError(e instanceof ApiError ? e.message : errorMessage(e));
-        setScanKey((k) => k + 1); // remount the scanner so they can rescan
-      },
-    });
-  };
-  const onDecoded = (text: string) => {
-    const assetId = parseAssetId(text);
-    if (!assetId) {
-      setScanError("That doesn't look like a Rack label — try again or type the ID.");
-      setScanKey((k) => k + 1);
-      return;
-    }
-    setScanError(null);
-    confirmAsset(assetId);
-  };
 
   const hoursValid = Number.isInteger(Number(hours)) && Number(hours) >= 1 && Number(hours) <= 90 * 24;
   const durationValid = durationMode !== "hours" || hoursValid;
-  const confirm = (access: "unlock" | "code") => {
+  const requestCheckout = () => {
     if (!selected) return;
     const duration_seconds = durationMode === "hours" ? Number(hours) * 3600
       : durationMode === "test5s" ? 5 : undefined;
-    borrow.mutate({ item_type_id: selected.item_type_id, days, duration_seconds,
-      with_accessory: kitOffer && withKit ? true : undefined, access }, {
-      onSuccess: (r) => { setResult(r); setChooseAccess(false); },
-      onError: (e) => {
-        if (e instanceof ApiError && e.status === 409) { toast(errorMessage(e)); closeSheet(); }
-      },
+    request.mutate({ item_type_id: selected.item_type_id, days, duration_seconds,
+      with_accessory: kitOffer && withKit ? true : undefined }, {
+      onSuccess: (r) => setRequested({ status: r.status, already: r.already_requested }),
+      onError: (e) => toast(errorMessage(e), "error"),
     });
   };
 
@@ -169,58 +129,30 @@ export function BrowseScreen() {
       ))}
 
       <Sheet open={selected !== null} onClose={closeSheet}>
-        {result && confirmedAsset && (!kitSession || confirmedKitAsset) ? (
+        {requested ? (
           <div className="text-center">
-            <h3 className="mb-1 text-lg font-semibold">All set</h3>
-            <LastReturnNotice lastReturn={result.last_return} />
-            <p className="mb-5 text-sm text-muted">
-              <span className="font-mono">{confirmedAsset}</span>
-              {confirmedKitAsset ? <> and <span className="font-mono">{confirmedKitAsset}</span> are checked out to you.</> : <> is checked out to you.</>} Close the door when you're done.
-            </p>
-            <Button className="w-full" onClick={closeSheet}>Done</Button>
-          </div>
-        ) : result && result.unlock === "code" ? (
-          <div className="text-center">
-            <h3 className="mb-1 text-lg font-semibold">Your cabinet code</h3>
-            <LastReturnNotice lastReturn={result.last_return} />
-            <p className="my-4 font-mono text-4xl font-bold tracking-[0.3em]">{result.access_code?.code}</p>
-            <p className="mb-1 text-sm text-muted">
-              Type it on the cabinet keypad, then press <span className="font-mono">#</span>.
-              Valid until {result.access_code ? new Date(result.access_code.ends_at).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" }) : ""}.
-            </p>
-            <p className="mb-1 text-xs text-muted/70">
-              Heads-up: the code takes about 30 minutes to start working. Need in sooner?
-              Use <span className="font-medium">Unlock cabinet</span> from My Items.
-            </p>
-            <p className="mb-5 text-xs text-muted/70">
-              The code stays visible on My Items. After you pick the item up, scan its label from
-              My Items — borrowing again is paused until you do.
-            </p>
-            <Button className="w-full" onClick={closeSheet}>Done</Button>
-          </div>
-        ) : result ? (
-          <div>
-            <h3 className="mb-1 text-lg font-semibold">{borrowResultMessage(result).title}</h3>
-            <LastReturnNotice lastReturn={result.last_return} />
-            <p className="mb-3 text-sm text-muted">
-              {!confirmedAsset
-                ? "Take your item, then scan the QR label on it to confirm which one you took."
-                : "Now scan the accessory box label."}
-            </p>
-            {kitError && <p className="mb-3 text-sm text-warning">{kitError}</p>}
-            <QrScanner key={scanKey} onScan={onDecoded} />
-            <div className="mt-3 flex gap-2">
-              <Input placeholder="…or type the asset ID" value={manualId}
-                onChange={(e) => setManualId(e.target.value)} />
-              <Button variant="secondary" disabled={!parseAssetId(manualId) || confirmUnit.isPending}
-                onClick={() => confirmAsset(parseAssetId(manualId)!)}>
-                {confirmUnit.isPending ? "…" : "Confirm"}
-              </Button>
-            </div>
-            {scanError && <p className="mt-2 text-sm text-danger">{scanError}</p>}
-            <button className="mt-4 w-full text-center text-xs text-muted/70 underline" onClick={closeSheet}>
-              Can't scan right now? Confirm later from My Items — borrowing is paused until you do
-            </button>
+            {requested.status === "approved" ? (
+              <>
+                <h3 className="mb-1 text-lg font-semibold">Approved</h3>
+                <p className="mb-5 text-sm text-muted">
+                  {requested.already ? "You already had an open request for this item — it's " : "Your checkout is "}
+                  ready for pickup. Unlock the cabinet from My Assets when you're at the rack.
+                </p>
+                <Button className="w-full" onClick={() => navigate("/my-items")}>Go to My Assets</Button>
+                <button className="mt-3 w-full text-center text-xs text-muted/70 underline" onClick={closeSheet}>
+                  Later — keep browsing
+                </button>
+              </>
+            ) : (
+              <>
+                <h3 className="mb-1 text-lg font-semibold">Request sent</h3>
+                <p className="mb-5 text-sm text-muted">
+                  An admin needs to approve this checkout. You'll get a notification with the decision —
+                  then pick it up from My Assets.
+                </p>
+                <Button className="w-full" onClick={closeSheet}>Done</Button>
+              </>
+            )}
           </div>
         ) : selected && selected.available_units === 0 ? (
           <div>
@@ -262,24 +194,10 @@ export function BrowseScreen() {
                 Also take an accessory kit ({kitOffer.available_units} available)
               </label>
             )}
-            {borrow.isError && <p className="mb-3 text-sm text-danger">{errorMessage(borrow.error)}</p>}
-            {chooseAccess ? (
-              <div className="flex flex-col gap-2">
-                <Button className="w-full" disabled={borrow.isPending || !durationValid} onClick={() => confirm("unlock")}>
-                  {borrow.isPending ? "Working…" : "Unlock now"}
-                </Button>
-                <Button variant="secondary" className="w-full" disabled={borrow.isPending || !durationValid} onClick={() => confirm("code")}>
-                  Get a code to unlock later
-                </Button>
-                <p className="text-center text-xs text-muted/70">
-                  A code works on the cabinet keypad for 24 hours, but takes about 30 minutes to start working.
-                </p>
-              </div>
-            ) : (
-              <Button className="w-full" disabled={!durationValid} onClick={() => setChooseAccess(true)}>
-                Confirm & unlock
-              </Button>
-            )}
+            {request.isError && <p className="mb-3 text-sm text-danger">{errorMessage(request.error)}</p>}
+            <Button className="w-full" disabled={request.isPending || !durationValid} onClick={requestCheckout}>
+              {request.isPending ? "Requesting…" : "Request approval"}
+            </Button>
           </div>
         ) : null}
       </Sheet>

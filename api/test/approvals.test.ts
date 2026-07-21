@@ -92,6 +92,53 @@ describe("checkout approvals", () => {
     await pool.query(`update item_units set status = 'available' where item_type_id = $1`, [goproId]);
   });
 
+  it("request → pickup: parameters ride the approval and it's consumed", async () => {
+    await pool.query(`update app_settings set value = 'auto' where key = 'borrow_approval_mode'`);
+    await pool.query(`update borrow_approvals set status = 'cancelled' where status in ('pending', 'approved')`);
+    const reqRes = await app.inject({ method: "POST", url: "/api/borrow/request",
+      payload: { item_type_id: goproId, duration_seconds: 3600 },
+      cookies: { rack_session: userCookie } });
+    expect(reqRes.json().status).toBe("approved"); // auto mode grants instantly
+    const id = reqRes.json().id;
+    // Re-requesting the same item returns the open request instead of duplicating.
+    const again = await app.inject({ method: "POST", url: "/api/borrow/request",
+      payload: { item_type_id: goproId }, cookies: { rack_session: userCookie } });
+    expect(again.json()).toMatchObject({ id, already_requested: true });
+    // It shows on My Assets…
+    const mb = await app.inject({ method: "GET", url: "/api/my-borrows",
+      cookies: { rack_session: userCookie } });
+    expect(mb.json().approvals).toHaveLength(1);
+    expect(mb.json().approvals[0]).toMatchObject({ id, status: "approved", duration_seconds: 3600 });
+    // …and pickup consumes it, inheriting the 1-hour duration.
+    const pick = await app.inject({ method: "POST", url: "/api/borrow",
+      payload: { approval_id: id }, cookies: { rack_session: userCookie } });
+    expect(pick.statusCode).toBe(200);
+    const due = new Date(pick.json().due_at).getTime();
+    expect(Math.abs(due - (Date.now() + 3600_000))).toBeLessThan(10_000);
+    const { rows: [a] } = await pool.query(`select status from borrow_approvals where id = $1`, [id]);
+    expect(a.status).toBe("used");
+    // A used approval can't unlock again.
+    expect((await app.inject({ method: "POST", url: "/api/borrow",
+      payload: { approval_id: id }, cookies: { rack_session: userCookie } })).statusCode).toBe(409);
+    await app.inject({ method: "POST", url: "/api/return",
+      payload: { session_id: pick.json().session_id }, cookies: { rack_session: userCookie } });
+  });
+
+  it("a request can be cancelled before pickup", async () => {
+    const reqRes = await app.inject({ method: "POST", url: "/api/borrow/request",
+      payload: { item_type_id: goproId }, cookies: { rack_session: userCookie } });
+    const id = reqRes.json().id;
+    const del = await app.inject({ method: "DELETE", url: `/api/borrow/request/${id}`,
+      cookies: { rack_session: userCookie } });
+    expect(del.json().ok).toBe(true);
+    const mb = await app.inject({ method: "GET", url: "/api/my-borrows",
+      cookies: { rack_session: userCookie } });
+    expect(mb.json().approvals).toHaveLength(0);
+    // Cancelled approvals can't be picked up.
+    expect((await app.inject({ method: "POST", url: "/api/borrow",
+      payload: { approval_id: id }, cookies: { rack_session: userCookie } })).statusCode).toBe(409);
+  });
+
   it("mode switching validates input and requires admin", async () => {
     expect((await app.inject({ method: "POST", url: "/api/admin/approval-mode",
       payload: { mode: "auto" }, cookies: { rack_session: userCookie } })).statusCode).toBe(403);

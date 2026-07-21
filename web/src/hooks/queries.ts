@@ -77,6 +77,29 @@ export function useBorrow() {
     onSuccess: () => invalidateBorrowViews(qc),
   });
 }
+export function useRequestBorrow() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { item_type_id: string; days?: number; duration_seconds?: number; with_accessory?: boolean }) =>
+      api.requestBorrow(v),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["my-borrows"] }),
+  });
+}
+export function useCancelBorrowRequest() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.cancelBorrowRequest(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["my-borrows"] }),
+  });
+}
+export function usePickupBorrow() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { approval_id: string; access: "unlock" | "code" }) =>
+      api.pickupBorrow(v.approval_id, v.access),
+    onSuccess: () => invalidateBorrowViews(qc),
+  });
+}
 export function useConfirmBorrow() {
   const qc = useQueryClient();
   return useMutation({
