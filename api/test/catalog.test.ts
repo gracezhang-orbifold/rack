@@ -25,6 +25,6 @@ describe("catalog", () => {
   it("my-borrows starts empty", async () => {
     const res = await app.inject({ method: "GET", url: "/api/my-borrows",
       cookies: { rack_session: cookie } });
-    expect(res.json()).toEqual({ active: [], history: [] });
+    expect(res.json()).toEqual({ active: [], history: [], approvals: [] });
   });
 });

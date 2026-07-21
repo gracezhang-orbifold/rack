@@ -65,20 +65,82 @@ async function logEvent(e: { lock_id?: string; session_id: string; user_id: stri
 }
 
 export async function borrowRoutes(app: FastifyInstance) {
-  app.post<{ Body: { item_type_id?: string; days?: number; unit_id?: string; with_accessory?: boolean;
-    access?: string; duration_seconds?: number } }>(
-    "/api/borrow", { preHandler: requireUser }, async (req, reply) => {
-      const { item_type_id, days, unit_id, with_accessory, access = "unlock", duration_seconds } = req.body ?? {};
+  // Ask to check an item out. The checkout parameters ride on the approval so
+  // the pickup (from My Assets) needs no re-entry. Auto mode grants instantly.
+  app.post<{ Body: { item_type_id?: string; days?: number; duration_seconds?: number;
+    with_accessory?: boolean } }>(
+    "/api/borrow/request", { preHandler: requireUser }, async (req, reply) => {
+      const { item_type_id, days, duration_seconds, with_accessory } = req.body ?? {};
       if (!item_type_id) return reply.code(400).send({ error: "item_type_id is required" });
       if (with_accessory !== undefined && typeof with_accessory !== "boolean")
         return reply.code(400).send({ error: "with_accessory must be a boolean" });
-      if (access !== "unlock" && access !== "code")
-        return reply.code(400).send({ error: "access must be unlock or code" });
-      // Sub-day loans (custom hours; the 5-second test checkout). The floor of
-      // 5 exists purely for that test button.
+      if (days !== undefined && (!Number.isInteger(days) || days < 1 || days > 90))
+        return reply.code(400).send({ error: "days must be 1-90" });
       if (duration_seconds !== undefined
         && (!Number.isInteger(duration_seconds) || duration_seconds < 5 || duration_seconds > 90 * 86400))
         return reply.code(400).send({ error: "duration_seconds must be 5 seconds to 90 days" });
+      let itemType;
+      try {
+        ({ rows: [itemType] } = await query(`select id from item_types where id = $1`, [item_type_id]));
+      } catch (e: any) {
+        if (e?.code === "22P02") return reply.code(404).send({ error: "item not found" });
+        throw e;
+      }
+      if (!itemType) return reply.code(404).send({ error: "item not found" });
+      // One open request per user+item — re-requesting returns the existing one.
+      const { rows: [existing] } = await query(`
+        select id, status from borrow_approvals
+        where user_id = $1 and item_type_id = $2 and status in ('pending', 'approved')
+        limit 1`, [req.user!.id, item_type_id]);
+      if (existing) return { id: existing.id, status: existing.status, already_requested: true };
+      const { rows: [modeRow] } = await query(
+        `select value from app_settings where key = 'borrow_approval_mode'`);
+      const auto = (modeRow?.value ?? "auto") === "auto";
+      const { rows: [created] } = await query(`
+        insert into borrow_approvals
+          (user_id, item_type_id, days, duration_seconds, with_accessory, status, auto_approved, decided_at)
+        values ($1, $2, $3, $4, $5, $6, $7, $8)
+        returning id, status`,
+        [req.user!.id, item_type_id, days ?? null, duration_seconds ?? null, with_accessory ?? false,
+         auto ? "approved" : "pending", auto, auto ? new Date() : null]);
+      return { id: created.id, status: created.status };
+    });
+
+  // Withdraw a request that hasn't been picked up yet.
+  app.delete<{ Params: { id: string } }>(
+    "/api/borrow/request/:id", { preHandler: requireUser }, async (req, reply) => {
+      let row;
+      try {
+        ({ rows: [row] } = await query(`
+          update borrow_approvals set status = 'cancelled'
+          where id = $1 and user_id = $2 and status in ('pending', 'approved')
+          returning id`, [req.params.id, req.user!.id]));
+      } catch (e: any) {
+        if (e?.code === "22P02") return reply.code(404).send({ error: "request not found" });
+        throw e;
+      }
+      if (!row) return reply.code(404).send({ error: "request not found" });
+      return { ok: true };
+    });
+
+  app.post<{ Body: { item_type_id?: string; days?: number; unit_id?: string; with_accessory?: boolean;
+    access?: string; duration_seconds?: number; approval_id?: string } }>(
+    "/api/borrow", { preHandler: requireUser }, async (req, reply) => {
+      const approval_id = req.body?.approval_id;
+      let { item_type_id, days, unit_id, with_accessory, duration_seconds } = req.body ?? {};
+      const access = req.body?.access ?? "unlock";
+      if (access !== "unlock" && access !== "code")
+        return reply.code(400).send({ error: "access must be unlock or code" });
+      if (approval_id === undefined) {
+        if (!item_type_id) return reply.code(400).send({ error: "item_type_id is required" });
+        if (with_accessory !== undefined && typeof with_accessory !== "boolean")
+          return reply.code(400).send({ error: "with_accessory must be a boolean" });
+        // Sub-day loans (custom hours; the 5-second test checkout). The floor of
+        // 5 exists purely for that test button.
+        if (duration_seconds !== undefined
+          && (!Number.isInteger(duration_seconds) || duration_seconds < 5 || duration_seconds > 90 * 86400))
+          return reply.code(400).send({ error: "duration_seconds must be 5 seconds to 90 days" });
+      }
       // A checkout whose label scan was skipped blocks further borrowing —
       // the database doesn't know which physical unit the user actually has.
       const { rows: pending } = await query(`
@@ -115,29 +177,53 @@ export async function borrowRoutes(app: FastifyInstance) {
           console.error("approval restore failed", consumedApprovalId, err);
         }
       };
-      const { rows: [modeRow] } = await query(
-        `select value from app_settings where key = 'borrow_approval_mode'`);
-      if ((modeRow?.value ?? "auto") === "auto") {
-        await query(`insert into borrow_approvals (user_id, item_type_id, status, auto_approved, decided_at)
-          values ($1, $2, 'used', true, now())`, [req.user!.id, item_type_id]);
+      if (approval_id !== undefined) {
+        // Pickup of a previously-approved request: consume it and inherit its
+        // checkout parameters.
+        let appr;
+        try {
+          ({ rows: [appr] } = await query(`
+            update borrow_approvals set status = 'used'
+            where id = $1 and user_id = $2 and status = 'approved'
+            returning item_type_id, days, duration_seconds, with_accessory`,
+            [approval_id, req.user!.id]));
+        } catch (e: any) {
+          if (e?.code === "22P02") return reply.code(404).send({ error: "approval not found" });
+          throw e;
+        }
+        if (!appr)
+          return reply.code(409).send({ error: "that request isn't approved (or was already used)" });
+        consumedApprovalId = approval_id;
+        item_type_id = appr.item_type_id;
+        days = appr.days ?? undefined;
+        duration_seconds = appr.duration_seconds ?? undefined;
+        with_accessory = appr.with_accessory;
+        unit_id = undefined;
       } else {
-        const { rows: [granted] } = await query(`
-          update borrow_approvals set status = 'used'
-          where id = (select id from borrow_approvals
-            where user_id = $1 and item_type_id = $2 and status = 'approved'
-            order by decided_at limit 1)
-          returning id`, [req.user!.id, item_type_id]);
-        consumedApprovalId = granted?.id ?? null;
-        if (!granted) {
-          await query(`
-            insert into borrow_approvals (user_id, item_type_id)
-            select $1, $2 where not exists (
-              select 1 from borrow_approvals
-              where user_id = $1 and item_type_id = $2 and status = 'pending')`,
-            [req.user!.id, item_type_id]);
-          return reply.code(409).send({
-            error: "this checkout needs admin approval — your request has been sent; try again once it's approved",
-          });
+        const { rows: [modeRow] } = await query(
+          `select value from app_settings where key = 'borrow_approval_mode'`);
+        if ((modeRow?.value ?? "auto") === "auto") {
+          await query(`insert into borrow_approvals (user_id, item_type_id, status, auto_approved, decided_at)
+            values ($1, $2, 'used', true, now())`, [req.user!.id, item_type_id]);
+        } else {
+          const { rows: [granted] } = await query(`
+            update borrow_approvals set status = 'used'
+            where id = (select id from borrow_approvals
+              where user_id = $1 and item_type_id = $2 and status = 'approved'
+              order by decided_at limit 1)
+            returning id`, [req.user!.id, item_type_id]);
+          consumedApprovalId = granted?.id ?? null;
+          if (!granted) {
+            await query(`
+              insert into borrow_approvals (user_id, item_type_id)
+              select $1, $2 where not exists (
+                select 1 from borrow_approvals
+                where user_id = $1 and item_type_id = $2 and status = 'pending')`,
+              [req.user!.id, item_type_id]);
+            return reply.code(409).send({
+              error: "this checkout needs admin approval — your request has been sent; try again once it's approved",
+            });
+          }
         }
       }
       let session;

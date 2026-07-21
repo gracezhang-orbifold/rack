@@ -1,15 +1,16 @@
 import { useState } from "react";
 import {
-  useConfirmBorrow, useExtend, useMyBorrows, useReturn, useSaveDraftAnswers,
-  useSettings, useUnlockBorrow, useUpdateSettings,
+  useCancelBorrowRequest, useConfirmBorrow, useExtend, useMyBorrows, usePickupBorrow,
+  useReturn, useSaveDraftAnswers, useSettings, useUnlockBorrow, useUpdateSettings,
 } from "../hooks/queries";
 import { Badge, Button, Sheet, Spinner, useToast } from "../components/ui";
 import { QrScanner } from "../components/QrScanner";
-import { errorMessage } from "../lib/borrowResult";
+import { LastReturnNotice } from "../components/LastReturnNotice";
+import { borrowResultMessage, errorMessage } from "../lib/borrowResult";
 import { parseAssetId } from "../lib/scan";
 import { api, ApiError } from "../lib/api";
 import { isIOS, isStandalone, pushSupported, subscribeToPush } from "../lib/push";
-import type { ActiveBorrow, ReturnAnswers } from "../lib/types";
+import type { ActiveBorrow, BorrowResult, MyApproval, ReturnAnswers } from "../lib/types";
 
 const EXTEND_PRESETS = [1, 3, 7, 14];
 
@@ -129,6 +130,10 @@ export function MyItemsScreen() {
   const extend = useExtend();
   const confirmUnit = useConfirmBorrow();
   const unlock = useUnlockBorrow();
+  const cancelReq = useCancelBorrowRequest();
+  const pickupMut = usePickupBorrow();
+  const [pickup, setPickup] = useState<MyApproval | null>(null);
+  const [pickupResult, setPickupResult] = useState<BorrowResult | null>(null);
   const toast = useToast();
   const [sheet, setSheet] = useState<{ kind: "menu" | "return" | "extend" | "confirm" | "questions"; b: ActiveBorrow } | null>(null);
   const [done, setDone] = useState(false);
@@ -270,9 +275,66 @@ export function MyItemsScreen() {
   if (borrows.isLoading) return <Spinner />;
   if (borrows.isError) return <p className="p-4 text-sm text-muted">Couldn't load your items.</p>;
   const { active, history } = borrows.data!;
+  const approvals = borrows.data!.approvals ?? [];
+
+  const durationLabel = (a: MyApproval) =>
+    a.duration_seconds != null
+      ? a.duration_seconds < 3600 ? `${a.duration_seconds}s loan` : `${Math.round(a.duration_seconds / 3600)}h loan`
+      : `${a.days ?? 7}d loan`;
+  const doPickup = (access: "unlock" | "code") => {
+    if (!pickup) return;
+    pickupMut.mutate({ approval_id: pickup.id, access }, {
+      onSuccess: (r) => setPickupResult(r),
+      onError: (e) => {
+        if (e instanceof ApiError && e.status === 409) {
+          toast(errorMessage(e), "error");
+          setPickup(null);
+        }
+      },
+    });
+  };
+  const closePickup = () => { setPickup(null); setPickupResult(null); };
+  const pickupKitError = pickupResult?.accessory && "error" in pickupResult.accessory
+    ? pickupResult.accessory.error : null;
 
   return (
     <div className="animate-fade-up py-3">
+      {approvals.length > 0 && (
+        <div className="mb-6">
+          <h2 className="mb-3 text-lg font-semibold">Requested</h2>
+          <ul className="grid grid-cols-1 gap-2 md:grid-cols-2">
+            {approvals.map((a) => (
+              <li key={a.id} className="flex items-center justify-between rounded-xl bg-surface p-3 shadow-sm shadow-black/20">
+                <div>
+                  <p className="font-medium">{a.item_name}</p>
+                  {a.status === "approved"
+                    ? <Badge tone="green">Approved — ready to pick up</Badge>
+                    : <Badge tone="amber">Waiting for approval</Badge>}
+                  <p className="text-xs text-muted/70">
+                    {durationLabel(a)}{a.with_accessory ? " · with accessory kit" : ""}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {a.status === "approved" && (
+                    <Button onClick={() => { setPickupResult(null); pickupMut.reset(); setPickup(a); }}>
+                      Unlock
+                    </Button>
+                  )}
+                  <button className="min-h-[44px] px-2 text-xs text-muted underline"
+                    aria-label={`Cancel request for ${a.item_name}`}
+                    disabled={cancelReq.isPending}
+                    onClick={() => cancelReq.mutate(a.id, {
+                      onSuccess: () => toast("Request cancelled."),
+                      onError: (e) => toast(errorMessage(e), "error"),
+                    })}>
+                    Cancel
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <h2 className="mb-3 text-lg font-semibold">Your items</h2>
       {active.length === 0 && <p className="text-sm text-muted">Nothing checked out.</p>}
       <ul className="grid grid-cols-1 gap-2 md:grid-cols-2">
@@ -486,6 +548,60 @@ export function MyItemsScreen() {
               </Button>
               <Button variant="secondary" className="w-full" disabled={ret.isPending || returnIncomplete}
                 onClick={() => doReturn(undefined, "code")}>
+                Get a code to unlock later
+              </Button>
+              <p className="text-center text-xs text-muted/70">
+                A code works on the cabinet keypad for 24 hours, but takes about 30 minutes to start working.
+              </p>
+            </div>
+          </div>
+        ) : null}
+      </Sheet>
+
+      <Sheet open={pickup !== null} onClose={closePickup}>
+        {pickup && pickupResult ? (
+          pickupResult.unlock === "code" ? (
+            <div className="text-center">
+              <h3 className="mb-1 text-lg font-semibold">Your cabinet code</h3>
+              <LastReturnNotice lastReturn={pickupResult.last_return} />
+              <p className="my-4 font-mono text-4xl font-bold tracking-[0.3em]">{pickupResult.access_code?.code}</p>
+              <p className="mb-1 text-sm text-muted">
+                Type it on the cabinet keypad, then press <span className="font-mono">#</span>.
+                Valid until {pickupResult.access_code ? new Date(pickupResult.access_code.ends_at).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" }) : ""}.
+              </p>
+              <p className="mb-1 text-xs text-muted/70">
+                Heads-up: the code takes about 30 minutes to start working. Need in sooner?
+                Use <span className="font-medium">Unlock cabinet</span> from the item's menu below.
+              </p>
+              <p className="mb-5 text-xs text-muted/70">
+                The code stays visible on this page. After you pick the item up, scan its label
+                (see the "Scan needed" badge below) — borrowing again is paused until you do.
+              </p>
+              <Button className="w-full" onClick={closePickup}>Done</Button>
+            </div>
+          ) : (
+            <div className="text-center">
+              <h3 className="mb-1 text-lg font-semibold">{borrowResultMessage(pickupResult).title}</h3>
+              <LastReturnNotice lastReturn={pickupResult.last_return} />
+              {pickupKitError && <p className="mb-3 text-sm text-warning">{pickupKitError}</p>}
+              <p className="mb-5 text-sm text-muted">
+                Take your {pickup.item_name}, then scan the label on it to confirm which unit you
+                took (see the "Scan needed" badge below) — borrowing again is paused until you do.
+                Close the door when you're done.
+              </p>
+              <Button className="w-full" onClick={closePickup}>Done</Button>
+            </div>
+          )
+        ) : pickup ? (
+          <div>
+            <h3 className="mb-1 text-lg font-semibold">Pick up {pickup.item_name}</h3>
+            <p className="mb-4 text-sm text-muted">How do you want to open the cabinet?</p>
+            {pickupMut.isError && <p className="mb-3 text-sm text-danger">{errorMessage(pickupMut.error)}</p>}
+            <div className="flex flex-col gap-2">
+              <Button className="w-full" disabled={pickupMut.isPending} onClick={() => doPickup("unlock")}>
+                {pickupMut.isPending ? "Working…" : "Unlock now"}
+              </Button>
+              <Button variant="secondary" className="w-full" disabled={pickupMut.isPending} onClick={() => doPickup("code")}>
                 Get a code to unlock later
               </Button>
               <p className="text-center text-xs text-muted/70">

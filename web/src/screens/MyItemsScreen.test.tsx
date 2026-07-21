@@ -105,6 +105,86 @@ it("mints a return code when unlock-later is chosen", async () => {
   });
 });
 
+const APPROVED = {
+  id: "ap1", status: "approved", requested_at: "2026-07-20T00:00:00Z",
+  days: 7, duration_seconds: null, with_accessory: false,
+  item_type_id: "t1", item_name: "GoPro 13 Black",
+};
+
+it("unlocks the cabinet for an approved pickup", async () => {
+  const f = vi.fn().mockImplementation(async (url: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(url);
+    if (path.endsWith("/api/borrow") && init?.method === "POST")
+      return { ok: true, status: 200, json: async () => ({
+        session_id: "s9", item_unit_id: "u9", due_at: "2026-07-27T00:00:00Z",
+        unlock: "ok", last_return: null, accessory: null,
+      }) };
+    if (path.endsWith("/api/my-borrows"))
+      return { ok: true, status: 200, json: async () => ({ ...DATA, approvals: [APPROVED] }) };
+    return { ok: true, status: 200, json: async () => [] };
+  });
+  vi.stubGlobal("fetch", f);
+  wrap();
+
+  expect(await screen.findByText("Approved — ready to pick up")).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Unlock" }));
+  await userEvent.click(await screen.findByRole("button", { name: "Unlock now" }));
+
+  expect(await screen.findByText("Cabinet unlocked")).toBeInTheDocument();
+  const call = f.mock.calls.find(([u, i]) =>
+    String(u).endsWith("/api/borrow") && (i as RequestInit)?.method === "POST");
+  expect(JSON.parse((call![1] as RequestInit).body as string)).toEqual({ approval_id: "ap1" });
+});
+
+it("shows the keypad code for a pickup with unlock-later", async () => {
+  const f = vi.fn().mockImplementation(async (url: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(url);
+    if (path.endsWith("/api/borrow") && init?.method === "POST")
+      return { ok: true, status: 200, json: async () => ({
+        session_id: "s9", item_unit_id: "u9", due_at: "2026-07-27T00:00:00Z", unlock: "code",
+        access_code: { code: "2477", ends_at: "2099-01-01T00:00:00Z" }, last_return: null, accessory: null,
+      }) };
+    if (path.endsWith("/api/my-borrows"))
+      return { ok: true, status: 200, json: async () => ({ ...DATA, approvals: [APPROVED] }) };
+    return { ok: true, status: 200, json: async () => [] };
+  });
+  vi.stubGlobal("fetch", f);
+  wrap();
+
+  await userEvent.click(await screen.findByRole("button", { name: "Unlock" }));
+  await userEvent.click(await screen.findByRole("button", { name: /get a code to unlock later/i }));
+
+  expect(await screen.findByText("2477")).toBeInTheDocument();
+  expect(screen.getAllByText(/about 30 minutes to start working/i).length).toBeGreaterThan(0);
+  const call = f.mock.calls.find(([u, i]) =>
+    String(u).endsWith("/api/borrow") && (i as RequestInit)?.method === "POST");
+  expect(JSON.parse((call![1] as RequestInit).body as string)).toEqual({
+    approval_id: "ap1", access: "code",
+  });
+});
+
+it("shows a pending request with a cancel action", async () => {
+  const pending = { ...APPROVED, id: "ap2", status: "pending" };
+  const f = vi.fn().mockImplementation(async (url: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(url);
+    if (path.endsWith("/api/borrow/request/ap2") && init?.method === "DELETE")
+      return { ok: true, status: 200, json: async () => ({ ok: true }) };
+    if (path.endsWith("/api/my-borrows"))
+      return { ok: true, status: 200, json: async () => ({ ...DATA, approvals: [pending] }) };
+    return { ok: true, status: 200, json: async () => [] };
+  });
+  vi.stubGlobal("fetch", f);
+  wrap();
+
+  expect(await screen.findByText("Waiting for approval")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Unlock" })).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: /cancel request/i }));
+
+  await waitFor(() =>
+    expect(f.mock.calls.some(([u, i]) =>
+      String(u).endsWith("/api/borrow/request/ap2") && (i as RequestInit)?.method === "DELETE")).toBe(true));
+});
+
 const SETTINGS = {
   remind_before_minutes: 1440, overdue_reminder_every_days: 1,
   reminder_channel: "email", vapid_public_key: "QUJDREVGRw",
