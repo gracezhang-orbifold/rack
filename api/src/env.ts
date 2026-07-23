@@ -12,6 +12,8 @@ export const env = {
   // e.g. smtps://user:pass@smtp.gmail.com:465; "log:" logs instead of
   // sending (dev/smoke); empty disables email delivery.
   SMTP_URL: req("SMTP_URL", ""),
+  // Only emails on this domain may sign up or sign in; empty disables the check.
+  ALLOWED_EMAIL_DOMAIN: req("ALLOWED_EMAIL_DOMAIN", "orbifold.ai"),
   EMAIL_FROM: req("EMAIL_FROM", "Rack <ops@orbifold.ai>"),
   CRON_ENABLED: req("CRON_ENABLED", "true") === "true",
   NODE_ENV: req("NODE_ENV", "development"),

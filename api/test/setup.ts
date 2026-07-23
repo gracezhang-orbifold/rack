@@ -22,3 +22,6 @@ if (needsDefault) {
   process.env.DATABASE_URL = "postgresql://rack:rack@localhost:5433/rack_test";
 }
 process.env.NODE_ENV = "test";
+// Tests sign up with arbitrary email domains; disable the domain allowlist
+// by default. auth.test.ts re-enables it to cover the gate itself.
+process.env.ALLOWED_EMAIL_DOMAIN = "";

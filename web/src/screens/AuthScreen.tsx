@@ -21,7 +21,10 @@ export function AuthScreen() {
   return (
     <div className="mx-auto flex min-h-full max-w-md flex-col justify-center p-6">
       <h1 className="mb-1 text-2xl font-bold">Rack</h1>
-      <p className="mb-6 text-sm text-muted">{mode === "login" ? "Sign in to borrow equipment." : "Create your account."}</p>
+      <p className="mb-6 text-sm text-muted">
+        {mode === "login" ? "Sign in to borrow equipment." : "Create your account."}
+        {" "}Use your @orbifold.ai email.
+      </p>
       <form onSubmit={submit} className="flex flex-col gap-3">
         {mode === "signup" && (
           <label className="text-sm">Name
