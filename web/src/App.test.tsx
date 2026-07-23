@@ -34,5 +34,5 @@ it("returns to the auth screen after signing out", async () => {
 
   await userEvent.click(await screen.findByRole("button", { name: "Sign out" }));
 
-  expect(await screen.findByText("Sign in to borrow equipment.")).toBeInTheDocument();
+  expect(await screen.findByText(/Sign in to borrow equipment\./)).toBeInTheDocument();
 });

@@ -2,12 +2,20 @@ import type { FastifyInstance } from "fastify";
 import { query } from "../db.js";
 import { createSession, destroySession, hashPassword, readSessionId, requireUser, verifyPassword } from "../auth.js";
 import { pushPublicKey } from "../push.js";
+import { env } from "../env.js";
+
+function emailDomainAllowed(email: string): boolean {
+  if (!env.ALLOWED_EMAIL_DOMAIN) return true;
+  return email.toLowerCase().endsWith(`@${env.ALLOWED_EMAIL_DOMAIN.toLowerCase()}`);
+}
 
 export async function authRoutes(app: FastifyInstance) {
   app.post<{ Body: { email?: string; password?: string; full_name?: string } }>(
     "/api/auth/signup", async (req, reply) => {
       const { email, password, full_name } = req.body ?? {};
       if (!email || !email.includes("@")) return reply.code(400).send({ error: "valid email required" });
+      if (!emailDomainAllowed(email))
+        return reply.code(403).send({ error: `only @${env.ALLOWED_EMAIL_DOMAIN} emails can sign up` });
       if (!password || password.length < 8) return reply.code(400).send({ error: "password must be at least 8 characters" });
       const hash = await hashPassword(password);
       try {
@@ -34,6 +42,9 @@ export async function authRoutes(app: FastifyInstance) {
   app.post<{ Body: { email?: string; password?: string } }>(
     "/api/auth/login", async (req, reply) => {
       const { email, password } = req.body ?? {};
+      // Also gate login so pre-existing accounts on other domains are locked out.
+      if (email && !emailDomainAllowed(email))
+        return reply.code(403).send({ error: `only @${env.ALLOWED_EMAIL_DOMAIN} emails can sign in` });
       const { rows } = await query(
         `select id, email, role, full_name, password_hash from profiles where email = lower($1)`,
         [email ?? ""]);
