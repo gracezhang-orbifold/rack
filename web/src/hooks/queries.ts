@@ -192,6 +192,13 @@ export function useUpdateUnit() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["inventory"] }); qc.invalidateQueries({ queryKey: ["availability"] }); },
   });
 }
+export function useDeleteUnits() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.deleteUnits,
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["inventory"] }); qc.invalidateQueries({ queryKey: ["availability"] }); },
+  });
+}
 export function useAddAccessoryKit() {
   const qc = useQueryClient();
   return useMutation({

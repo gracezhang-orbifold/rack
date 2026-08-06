@@ -1,6 +1,6 @@
 import { Fragment, useState } from "react";
 import { Link } from "react-router-dom";
-import { useAdminBorrows, useAdminInventory, useUnitHistory, useUpdateUnit } from "../hooks/queries";
+import { useAdminBorrows, useAdminInventory, useDeleteUnits, useUnitHistory, useUpdateUnit } from "../hooks/queries";
 import { Button, Input, Sheet, Spinner, useToast } from "../components/ui";
 import { errorMessage } from "../lib/borrowResult";
 import type { UnitStatus } from "../lib/types";
@@ -38,10 +38,13 @@ export function AdminInventoryScreen() {
   const inventory = useAdminInventory();
   const borrows = useAdminBorrows();
   const updateUnit = useUpdateUnit();
+  const deleteUnits = useDeleteUnits();
   const toast = useToast();
   const [expandedUnit, setExpandedUnit] = useState<string | null>(null);
   const [expandedName, setExpandedName] = useState<string | null>(null);
   const [manageType, setManageType] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [q, setQ] = useState("");
   const [category, setCategory] = useState("");
   const [status, setStatus] = useState("");
@@ -77,6 +80,29 @@ export function AdminInventoryScreen() {
       onError: (err) => toast(errorMessage(err), "error"),
     });
 
+  // Selection is keyed by asset id (units without one can't be bulk-deleted).
+  const selectable = rows.filter(({ u }) => u.asset_id).map(({ u }) => u.asset_id!);
+  const allSelected = selectable.length > 0 && selectable.every((a) => selected.has(a));
+  const toggle = (assetId: string) => setSelected((prev) => {
+    const next = new Set(prev);
+    if (next.has(assetId)) next.delete(assetId); else next.add(assetId);
+    return next;
+  });
+  const toggleAll = () =>
+    setSelected(allSelected ? new Set() : new Set(selectable));
+
+  const runDelete = () =>
+    deleteUnits.mutate([...selected], {
+      onSuccess: (res) => {
+        setConfirmingDelete(false);
+        setSelected(new Set(res.blocked.map((b) => b.asset_id)));
+        if (res.deleted.length > 0) toast(`Deleted ${res.deleted.length} asset${res.deleted.length === 1 ? "" : "s"}`);
+        for (const b of res.blocked) toast(`${b.asset_id}: ${b.reason}`, "error");
+        if (res.not_found.length > 0) toast(`Not found: ${res.not_found.join(", ")}`, "error");
+      },
+      onError: (err) => { setConfirmingDelete(false); toast(errorMessage(err), "error"); },
+    });
+
   return (
     <div className="animate-fade-up py-3">
       <div className="mb-3 flex items-center justify-between">
@@ -109,10 +135,34 @@ export function AdminInventoryScreen() {
         </select>
       </div>
 
+      {selected.size > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-3 rounded-xl bg-surface p-3 shadow-sm shadow-black/20">
+          <p className="text-sm text-muted">{selected.size} selected</p>
+          {confirmingDelete ? (
+            <>
+              <p className="text-sm text-danger">Delete {selected.size} asset{selected.size === 1 ? "" : "s"}? This can't be undone.</p>
+              <Button variant="danger" disabled={deleteUnits.isPending} onClick={runDelete}>
+                {deleteUnits.isPending ? "Deleting…" : "Confirm delete"}
+              </Button>
+              <Button variant="secondary" onClick={() => setConfirmingDelete(false)}>Cancel</Button>
+            </>
+          ) : (
+            <>
+              <Button variant="danger" onClick={() => setConfirmingDelete(true)}>Delete selected</Button>
+              <Button variant="secondary" onClick={() => setSelected(new Set())}>Clear</Button>
+            </>
+          )}
+        </div>
+      )}
+
       <div className="overflow-x-auto rounded-xl bg-surface shadow-sm shadow-black/20">
         <table className="w-full min-w-[560px] text-left text-sm">
           <thead>
             <tr className="text-xs uppercase tracking-wide text-muted/70">
+              <th className="px-3 py-2">
+                <input type="checkbox" aria-label="Select all assets" checked={allSelected}
+                  disabled={selectable.length === 0} onChange={toggleAll} />
+              </th>
               <th className="px-3 py-2 font-semibold">Asset No</th>
               <th className="px-3 py-2 font-semibold">Name</th>
               <th className="px-3 py-2 font-semibold">Category</th>
@@ -123,11 +173,17 @@ export function AdminInventoryScreen() {
           </thead>
           <tbody>
             {rows.length === 0 && (
-              <tr><td colSpan={6} className="px-3 py-6 text-center text-muted">No matching assets.</td></tr>
+              <tr><td colSpan={7} className="px-3 py-6 text-center text-muted">No matching assets.</td></tr>
             )}
             {rows.map(({ u, t }) => (
               <Fragment key={u.id}>
                 <tr className="border-t border-edge/40">
+                  <td className="px-3 py-2">
+                    <input type="checkbox" disabled={!u.asset_id}
+                      aria-label={`Select ${u.asset_id ?? t.name}`}
+                      checked={u.asset_id ? selected.has(u.asset_id) : false}
+                      onChange={() => u.asset_id && toggle(u.asset_id)} />
+                  </td>
                   <td className="px-3 py-2">
                     <button className="font-mono text-xs text-muted underline decoration-dotted"
                       onClick={() => setExpandedUnit(expandedUnit === u.id ? null : u.id)}>
@@ -156,7 +212,7 @@ export function AdminInventoryScreen() {
                 </tr>
                 {expandedUnit === u.id && (
                   <tr className="border-t border-edge/40 bg-surface-2/50">
-                    <td colSpan={6} className="px-3 py-2"><UnitHistory unitId={u.id} /></td>
+                    <td colSpan={7} className="px-3 py-2"><UnitHistory unitId={u.id} /></td>
                   </tr>
                 )}
               </Fragment>

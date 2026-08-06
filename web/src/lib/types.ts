@@ -106,6 +106,11 @@ export interface AdminItemType {
   id: string; name: string; category: string; notes: string | null;
   return_questions: ReturnQuestion[]; units: AdminUnit[]; accessory_type_id: string | null;
 }
+export interface DeleteUnitsResult {
+  deleted: string[];
+  blocked: { asset_id: string; reason: string }[];
+  not_found: string[];
+}
 
 export interface ServiceRequest {
   id: string; description: string; status: "open" | "resolved";

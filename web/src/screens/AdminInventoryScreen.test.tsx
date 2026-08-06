@@ -98,6 +98,48 @@ describe("AdminInventoryScreen (Total Assets table)", () => {
     expect(screen.getByText("MacBook Air")).toBeInTheDocument();
   });
 
+  it("bulk-deletes selected asset ids after confirm and reports blocked units", async () => {
+    const f = stubFetch((path, init) => {
+      if (path.endsWith("/api/admin/item-units/delete") && init?.method === "POST")
+        return { deleted: ["RACK-0044"], blocked: [{ asset_id: "RACK-0050", reason: "currently borrowed — return it first" }], not_found: [] };
+      return undefined;
+    });
+    wrap();
+
+    await screen.findByText("RACK-0044");
+    await userEvent.click(screen.getByLabelText("Select RACK-0044"));
+    await userEvent.click(screen.getByLabelText("Select RACK-0050"));
+    expect(screen.getByText("2 selected")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Delete selected" }));
+    // confirm step — nothing sent yet
+    expect(screen.getByText(/delete 2 assets\? this can't be undone/i)).toBeInTheDocument();
+    expect(f.mock.calls.some(([u]) => String(u).endsWith("/item-units/delete"))).toBe(false);
+
+    await userEvent.click(screen.getByRole("button", { name: "Confirm delete" }));
+    await waitFor(() => {
+      const call = f.mock.calls.find(([u]) => String(u).endsWith("/api/admin/item-units/delete"));
+      expect(call).toBeTruthy();
+      expect(JSON.parse((call![1] as RequestInit).body as string)).toEqual({
+        asset_ids: ["RACK-0044", "RACK-0050"],
+      });
+    });
+    expect(await screen.findByText("Deleted 1 asset")).toBeInTheDocument();
+    expect(await screen.findByText(/RACK-0050: currently borrowed/)).toBeInTheDocument();
+    // the blocked unit stays selected for follow-up; the deleted one doesn't
+    expect(screen.getByText("1 selected")).toBeInTheDocument();
+  });
+
+  it("select-all checkbox selects only labeled, currently filtered rows", async () => {
+    stubFetch();
+    wrap();
+    await screen.findByText("RACK-0044");
+    await userEvent.selectOptions(screen.getByLabelText("Category"), "Camera");
+    await userEvent.click(screen.getByLabelText("Select all assets"));
+    expect(screen.getByText("1 selected")).toBeInTheDocument();
+    expect((screen.getByLabelText("Select RACK-0044") as HTMLInputElement).checked).toBe(true);
+  });
+
   it("manage-type sheet stages return questions and applies them on Done", async () => {
     const f = stubFetch((path, init) => {
       if (path.endsWith("/api/admin/item-types/t1") && init?.method === "PATCH") return { ...INVENTORY[0] };

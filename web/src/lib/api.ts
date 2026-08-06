@@ -2,6 +2,7 @@ import type {
   Me, AvailabilityItem, MyBorrows, BorrowResult, AdminBorrows, AdminItemType, AdminUnit,
   ScannedUnit, ItemRequest, RequestKind, UnitHistoryRow, ReminderSettings, ServiceRequest, AdminServiceRequest,
   AttentionItem, ReturnAnswers, ReturnQuestion, AdminUser, AllowlistEntry, AdminApprovals,
+  DeleteUnitsResult,
 } from "./types";
 
 export class ApiError extends Error {
@@ -130,6 +131,8 @@ export const api = {
     request<{ created: number }>("/admin/item-units", post(body)),
   updateUnit: (id: string, body: { status?: string; asset_id?: string; owner?: string; notes?: string }) =>
     request<AdminUnit>(`/admin/item-units/${id}`, patch(body)),
+  deleteUnits: (asset_ids: string[]) =>
+    request<DeleteUnitsResult>("/admin/item-units/delete", post({ asset_ids })),
   unitHistory: (id: string) => request<UnitHistoryRow[]>(`/admin/item-units/${encodeURIComponent(id)}/history`),
   assignAssetIds: () => request<{ assigned: number }>("/admin/assign-asset-ids", post()),
 };

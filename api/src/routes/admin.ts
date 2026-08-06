@@ -386,6 +386,53 @@ export async function adminRoutes(app: FastifyInstance) {
       return reply.code(409).send({ error: "unit has an active borrow session — return it instead" });
     });
 
+  // Bulk-delete units by asset id. Hard delete only applies to units with no
+  // borrow history; units that were ever borrowed keep their audit trail
+  // (borrow_sessions FK would reject the delete anyway) and are reported
+  // back with a hint to retire them instead.
+  app.post<{ Body: { asset_ids?: unknown } }>(
+    "/api/admin/item-units/delete", async (req, reply) => {
+      const raw = req.body?.asset_ids;
+      if (!Array.isArray(raw) || raw.length === 0
+        || !raw.every((a) => typeof a === "string" && a.trim() !== ""))
+        return reply.code(400).send({ error: "asset_ids must be a non-empty array of asset ids" });
+      if (raw.length > 200)
+        return reply.code(400).send({ error: "at most 200 asset ids per request" });
+      const ids = [...new Set(raw.map((a) => (a as string).trim()))];
+      const { rows: units } = await query(`
+        select u.id, u.asset_id,
+          exists (select 1 from borrow_sessions s
+                  where s.item_unit_id = u.id and s.status = 'active') as active,
+          exists (select 1 from borrow_sessions s
+                  where s.item_unit_id = u.id) as has_history
+        from item_units u where u.asset_id = any($1)`, [ids]);
+      const found = new Set(units.map((u) => u.asset_id));
+      const not_found = ids.filter((a) => !found.has(a));
+      const blocked = units.filter((u) => u.has_history).map((u) => ({
+        asset_id: u.asset_id,
+        reason: u.active
+          ? "currently borrowed — return it first"
+          : "has borrow history — set it to retired instead",
+      }));
+      const deletable = units.filter((u) => !u.has_history);
+      let deleted: string[] = [];
+      if (deletable.length > 0) {
+        // The not-exists guard re-checks inside the delete so a borrow racing
+        // this request can't strand its session pointing at a deleted unit.
+        const { rows } = await query(`
+          delete from item_units u
+          where u.id = any($1)
+            and not exists (select 1 from borrow_sessions s where s.item_unit_id = u.id)
+          returning u.asset_id`, [deletable.map((u) => u.id)]);
+        deleted = rows.map((r) => r.asset_id);
+        for (const u of deletable) {
+          if (!deleted.includes(u.asset_id))
+            blocked.push({ asset_id: u.asset_id, reason: "currently borrowed — return it first" });
+        }
+      }
+      return { deleted, blocked, not_found };
+    });
+
   // Checkout approvals: pending queue, recent decisions, and the auto/manual mode.
   app.get("/api/admin/approvals", async () => {
     const { rows: [mode] } = await query(

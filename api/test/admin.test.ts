@@ -47,6 +47,54 @@ describe("admin", () => {
       payload: { status: "available" }, cookies: { rack_session: admin } });
     expect(res.statusCode).toBe(409);
   });
+  describe("bulk delete by asset id", () => {
+    beforeAll(async () => {
+      const { rows: [t] } = await pool.query(
+        `insert into item_types (name, category) values ('Delete Fixture', 'Test') returning id`);
+      await pool.query(`
+        insert into item_units (item_type_id, asset_id) values
+          ($1, 'DEL-CLEAN'), ($1, 'DEL-ACTIVE'), ($1, 'DEL-HISTORY')`, [t.id]);
+      const { rows: [u] } = await pool.query(`select id from profiles where email = 'u@o.ai'`);
+      await pool.query(`
+        insert into borrow_sessions (user_id, item_unit_id, status, due_at)
+        select $1, id, 'active', now() + interval '1 day'
+        from item_units where asset_id = 'DEL-ACTIVE'`, [u.id]);
+      await pool.query(`
+        insert into borrow_sessions (user_id, item_unit_id, status, due_at, returned_at)
+        select $1, id, 'returned', now() + interval '1 day', now()
+        from item_units where asset_id = 'DEL-HISTORY'`, [u.id]);
+    });
+
+    it("deletes clean units, blocks borrowed/history ones, reports unknown ids", async () => {
+      const res = await app.inject({ method: "POST", url: "/api/admin/item-units/delete",
+        payload: { asset_ids: ["DEL-CLEAN", "DEL-ACTIVE", "DEL-HISTORY", "DEL-NOPE"] },
+        cookies: { rack_session: admin } });
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.deleted).toEqual(["DEL-CLEAN"]);
+      expect(body.not_found).toEqual(["DEL-NOPE"]);
+      const reasons = Object.fromEntries(
+        body.blocked.map((b: { asset_id: string; reason: string }) => [b.asset_id, b.reason]));
+      expect(reasons["DEL-ACTIVE"]).toMatch(/currently borrowed/);
+      expect(reasons["DEL-HISTORY"]).toMatch(/borrow history/);
+      const left = await pool.query(
+        `select asset_id from item_units where asset_id like 'DEL-%' order by asset_id`);
+      expect(left.rows.map((r) => r.asset_id)).toEqual(["DEL-ACTIVE", "DEL-HISTORY"]);
+    });
+    it("rejects an empty or malformed asset_ids list with 400", async () => {
+      for (const payload of [{}, { asset_ids: [] }, { asset_ids: ["ok", 5] }, { asset_ids: [" "] }]) {
+        const res = await app.inject({ method: "POST", url: "/api/admin/item-units/delete",
+          payload, cookies: { rack_session: admin } });
+        expect(res.statusCode).toBe(400);
+      }
+    });
+    it("blocks non-admins with 403", async () => {
+      const res = await app.inject({ method: "POST", url: "/api/admin/item-units/delete",
+        payload: { asset_ids: ["DEL-ACTIVE"] }, cookies: { rack_session: user } });
+      expect(res.statusCode).toBe(403);
+    });
+  });
+
   it("rejects an invalid status value with 400", async () => {
     const t = await pool.query(`select id from item_types where name = 'Manus Gloves'`);
     const u = await pool.query(`select id from item_units where item_type_id = $1 limit 1`,
